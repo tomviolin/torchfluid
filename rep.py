@@ -13,11 +13,15 @@ plt.figure(figsize=(8,5))
 cols = list(plt.rcParams['axes.prop_cycle'])
 
 coli = 0
+datadirs = sorted(glob("datadir"+os.path.sep+"*"+os.path.sep+"report.txt"))
 for i in range(repno,0):
+    try:
+        reps = datadirs[i]
+    except:
+        continue
     repcol = cols[coli % 8]['color']
     coli+=1
     print(f"repcol={repcol}")
-    reps = sorted(glob("datadir"+os.path.sep+"*"+os.path.sep+"report.txt"))[i]
     x=pd.read_csv(reps,header=None)
     plt.plot(np.log(x.iloc[:,-1]+0.1),label=str(i)+": "+reps, color=repcol,alpha=0.4)
     plt.plot(savgol_filter(np.log(x.iloc[:,-1]+0.1), min(x.shape[0]//10,115)//2*2+1,1), color=repcol)
