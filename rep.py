@@ -29,7 +29,7 @@ for i in range(repno,0):
 leg = plt.legend()
 
 # set the linewidth of each legend object
-for legobj in leg.legendHandles:
+for legobj in leg.legend_handles:
     legobj.set_linewidth(1.5)
     legobj.set_alpha(1.0)
 

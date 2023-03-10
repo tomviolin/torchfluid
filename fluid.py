@@ -5,11 +5,12 @@ import sys,os,json
 if 'MODEL_PARAMS' in os.environ:
     MP = json.load(open(os.environ['MODEL_PARAMS'],"r"))
 else:
-    MP = []
+    MP = {}
 def mp(pn,dflt):
     if pn in MP:
         return MP[pn]
     else:
+        MP[pn]=dflt
         return dflt
 
 
@@ -19,7 +20,7 @@ BATCHSIZE=mp('BATCHSIZE',1)
 num_epochs = mp('NUM_EPOCHS',4000)
 num_meta_epochs = mp('NUM_META_EPOCS',1)
 ITERS=mp('ITERS',10)
-SCRAMBLE_SIZE=175
+SCRAMBLE_SIZE=mp('SCRAMBLE_SIZE',420)
 import cv2
 os.environ['CUDA_LAUNCH_BLOCKING']='1'
 #import torch_dct as dct
@@ -569,6 +570,7 @@ if (not TRAINING) or RESUMING:
 
 cnn.cuda()
 cnn.train().cuda()
+open(f"{datadir}{os.path.sep}model_params.json","w").write(json.dumps(MP))
 if TRAINING:
     print("training.")
     train(num_epochs, cnn, k)
