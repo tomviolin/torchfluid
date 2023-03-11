@@ -14,17 +14,29 @@ cols = list(plt.rcParams['axes.prop_cycle'])
 
 coli = 0
 datadirs = sorted(glob("datadir"+os.path.sep+"*"+os.path.sep+"report.txt"))
+
+repdirs=[]
 for i in range(repno,0):
     try:
         reps = datadirs[i]
+        repdirs.append(reps)
     except:
         continue
+xcoord=0
+for reps in repdirs:
     repcol = cols[coli % 8]['color']
     coli+=1
     print(f"repcol={repcol}")
     x=pd.read_csv(reps,header=None)
-    plt.plot(np.log(x.iloc[:,-1]+0.1),label=str(i)+": "+reps, color=repcol,alpha=0.4)
-    plt.plot(savgol_filter(np.log(x.iloc[:,-1]+0.1), min(x.shape[0]//10,115)//2*2+1,1), color=repcol)
+    yvals=np.log(x.iloc[:,-1])
+    plt.plot(range(xcoord,xcoord+len(yvals)),yvals,label=reps[-6:], color=repcol,alpha=0.8,lw=0.8)
+    ysmooth=savgol_filter(yvals,min(len(yvals)//10+2,115)//2*2+1,1)
+    plt.plot(range(xcoord,xcoord+len(ysmooth)),ysmooth, color=repcol)
+    plt.plot(xcoord+len(ysmooth)-1,ysmooth[-1], '.',ms=9,color=repcol,alpha=1.0,lw=1.5)
+    miny = np.min(yvals)
+    minx = np.where(yvals == miny)[0]
+    plt.plot(xcoord+minx,miny, 'o',ms=14, mfc='#ffffff00',mec=repcol+"ff")
+    xcoord += len(ysmooth)
 
 leg = plt.legend()
 
@@ -38,7 +50,8 @@ for legobj in leg.legend_handles:
 imgfile=os.path.sep.join((reps.split(os.path.sep)[:-1]))+os.path.sep+"report.png"
 print(f"imgfile={imgfile}")
 plt.savefig(imgfile)
-if os.path.sep=='/': 
-    os.system("sync;sync;eom "+imgfile)
-else:
-    os.system("start "+imgfile)
+plt.show()
+#if os.path.sep=='/': 
+#    os.system("sync;sync;eom "+imgfile)
+#else:
+#    os.system("start "+imgfile)

@@ -3,3 +3,4 @@ datadir
 venv
 .*~
 *~
+.ipynb_checkpoints
