@@ -1,0 +1,34 @@
+{
+    "ROUND":1,
+    "MODEL_ID": 1001,
+    "BATCHSIZE": 4,
+    "NUM_EPOCHS": 150,
+    "NUM_META_EPOCS": 1,
+    "ITERS": 16,
+    "SCRAMBLE_SIZE": 1,
+    "LAYER": [
+    {
+        "NCHAN": 8,
+        "KSIZE": 9,
+        "LEAK": 0.0,
+        "DROPOUT": 0.0
+    },
+    {
+        "NCHAN": 18,
+        "KSIZE": 9,
+        "LEAK": 0.0,
+        "DROPOUT": 0.0
+    },
+    {
+        "DROPOUT": 0.0,
+        "NCHAN": 18,
+        "KSIZE": 9,
+        "LEAK": 0.0
+    }],
+    "LAYER_LAST": {
+        "NCHAN": 8,
+        "KSIZE": 9,
+        "LEAK": 0.0,
+        "DROPOUT": 0.0
+    }
+}
