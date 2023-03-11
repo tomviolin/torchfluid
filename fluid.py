@@ -45,7 +45,7 @@ print(f"COMPUTING DEVICE: {device}")
 
 #from torchvision import datasets
 #from torchvision.transforms import ToTensor
-from torchinfo import summary
+#from torchinfo import summary
 import torch.nn as nn
 import time
 from glob2 import glob
@@ -138,7 +138,7 @@ def datagenerator():
             ))
 
 k = datagenerator()
-for i in range(np.random.randint(0,num_epochs*30)):
+for i in range(np.random.randint(0,num_epochs*3)):
     next(k)
 
 def TensorFluidBatch(k,batchsize):
@@ -318,11 +318,11 @@ def train(num_epochs, cnn, k):
                         torch.save(cnn.state_dict(), f"{datadir}{os.path.sep}cnnstate.dat")
                         print(f"saved state to {datadir}{os.path.sep}cnnstate.dat",flush=True)
                         bestloss=loss.item()
-                    j=os.system("nvidia-smi -i 0 -q |grep 'Used GPU' | awk -F: '{ print $2 }' | awk '{ print $1 }'>/tmp/gpumem") 
-                    gpumem = int(open("/tmp/gpumem",'r').read())
-                    print(f"mem used={gpumem}")
-                    if gpumem > 2000:
-                        sys.exit(0)
+                    #j=os.system("nvidia-smi -i 0 -q |grep 'Used GPU' | awk -F: '{ print $2 }' | awk '{ print $1 }'>/tmp/gpumem") 
+                    #gpumem = int(open("/tmp/gpumem",'r').read())
+                    #print(f"mem used={gpumem}")
+                    #if gpumem > 2000:
+                    #    sys.exit(0)
 
                 scheduler.step(loss)
                 #if loss.item() < 0.0002: break
@@ -342,7 +342,7 @@ if (not TRAINING) or RESUMING:
 
 cnn.cuda()
 cnn.train().cuda()
-summary(cnn.cuda(), (1,1,175,256))
+#summary(cnn.cuda(), (1,1,175,256))
 open(f"{datadir}{os.path.sep}model_params.json","w").write(json.dumps(MP,indent=4))
 if TRAINING:
     print("training.")
