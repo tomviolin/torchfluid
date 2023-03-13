@@ -19,7 +19,7 @@ def kalman(y):
     for i in range(len(y)):
         yk[i]=y[max(0,i-navg):i+1].mean()
         ys[i]=y[max(0,i-navg):i+1].std()
-        if yk[i]<bestloss and i >= 20 and np.abs(y[i]-yk[i]) < 0.2*ys[i]:
+        if yk[i]<bestloss and i >= 20:
             bestloss = yk[i]
             bestlossepoch = i
         if ys[i] < beststd and i >= 20:
@@ -98,7 +98,7 @@ print(f"imgfile={imgfile}")
 plt.savefig(imgfile)
 plt.savefig("rep.tmp.jpg")
 os.replace("rep.tmp.jpg","rep.jpg")
-#plt.show()
+plt.show()
 #if os.path.sep=='/': 
 #    os.system("sync;sync;eom "+imgfile)
 #else:
