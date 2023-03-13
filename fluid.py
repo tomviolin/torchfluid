@@ -1,9 +1,28 @@
 #!/usr/bin/env python3
 import sys,os,json
+import numpy as np
+import matplotlib.pyplot as plt
+import traceback
+import cv2
+import torch
+import torch.nn as nn
+import time
+from glob2 import glob
+timestamp = time.strftime("%Y%m%d_%H%M%S")
+from PIL import Image
+from scipy.spatial.distance import cdist
+from scipy.optimize import linear_sum_assignment
+from scipy.signal import fftconvolve
+import pandas as pd
+device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
+print(f"COMPUTING DEVICE: {device}")
 
 
-if 'MODEL_PARAMS' in os.environ:
+if 'MODEL_PARAMS' in os.environ and os.path.exists(os.environ['MODEL_PARAMS']):
     MP = json.load(open(os.environ['MODEL_PARAMS'],"r"))
+elif os.path.exists('template_model_params.json'):
+    MP = json.load(open('template_model_params.json','r'))
 elif os.path.exists('model_params.json'):
     MP = json.load(open('model_params.json','r'))
 else:
@@ -20,46 +39,48 @@ def mp(pn,dflt=None):
 
     pnstr = "MP["+"][".join(pns)+"]"
     try:
-        print(pnstr)
-        return eval(pnstr)
-    except:
-        print("ERROR: "+pnstr)
+        #print(f"{pnstr}",end='')
+        paramval = eval(pnstr)
+        #print(f">>{paramval}<< ",end='',flush=True)
+        if isinstance(paramval,list) and not isinstance(paramval[0],list) and not isinstance(paramval[0],dict):
+            #print("[rndizer]",end='')
+            pmin=paramval[0]
+            pmax=paramval[1]
+            pint=paramval[2]
+            numint = np.floor((pmax-pmin)/pint) + 1
+            intv = np.random.randint(0,numint)
+            paramval = pmin + pint*intv
+            exec(pnstr + f" = {paramval}")
+        #print(f"={paramval}")
+        return paramval
+    except Exception as e:
+        print(f"ERROR {e}: "+pnstr)
         return dflt
 
 TRAINING=not ('-t' in sys.argv or '-tr' in sys.argv)
 RESUMING='-r' in sys.argv or '-tr' in sys.argv
+CLEARING='-newdata' in sys.argv
 resumeskip=1
 if sys.argv[-1].isnumeric():
     resumeskip=int(sys.argv[-1])
 BATCHSIZE=mp('BATCHSIZE',16)
 num_epochs = mp('NUM_EPOCHS',4000)
 num_meta_epochs = mp('NUM_META_EPOCS',1)
-ITERS=mp('ITERS',0)
-ITERS += 0.05
-MP['ITERS'] = int(ITERS*100+0.5)/100
-#ITERS = int(ITERS)
+ITERS=mp('ITERS',1)
 SCRAMBLE_SIZE=mp('SCRAMBLE_SIZE',420)
-import cv2
 os.environ['CUDA_LAUNCH_BLOCKING']='1'
 #import torch_dct as dct
-import numpy as np
-import matplotlib.pyplot as plt
-import traceback
-import torch
-device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-print(f"COMPUTING DEVICE: {device}")
 
 #from torchvision import datasets
 #from torchvision.transforms import ToTensor
 #from torchinfo import summary
-import torch.nn as nn
-import time
-from glob2 import glob
-timestamp = time.strftime("%Y%m%d_%H%M%S")
-from PIL import Image
-from scipy.spatial.distance import cdist
-from scipy.optimize import linear_sum_assignment
-from scipy.signal import fftconvolve
+
+if CLEARING:
+    if os.path.exists("datadir"):
+        os.makedirs(f"archived_data",exist_ok=True)
+        os.rename("datadir",f"archived_data/datadir{timestamp}")
+        os.makedirs("datadir",exist_ok=True)
+
 
 def datagenerator():
     fname = sorted(glob("../lbinfo-*.csv"))[-1]
@@ -140,21 +161,22 @@ def datagenerator():
             flowpV.copy(),
             ))
 
-#k0 = datagenerator()
-"""
-idx=0
-while True:
-    try:
-        ftrain,ftarg = next(k0)
-        np.save(f'npy{os.path.sep}tra{idx:07d}.npy',ftrain)
-        np.save(f'npy{os.path.sep}tar{idx:07d}.npy',ftarg)
-        print(".",end='',flush=True)
-        if idx % 80 == 0:
-            print(idx,flush=True)
-        idx += 1
-    except:
-        break
-"""
+if '-npy' in sys.argv:  # eventually make this a feature
+    k0 = datagenerator()
+
+    idx=0
+    while True:
+        try:
+            ftrain,ftarg = next(k0)
+            np.save(f'npy{os.path.sep}tra{idx:07d}.npy',ftrain)
+            #np.save(f'npy{os.path.sep}tar{idx:07d}.npy',ftarg)
+            print(".",end='',flush=True)
+            if idx % 80 == 0:
+                print(idx,flush=True)
+            idx += 1
+        except:
+            break
+
 
 npydata = []
 idx=0
@@ -169,8 +191,9 @@ while True:
             print(idx,flush=True)
     else:
         break
+print(f"DATA LOADED: {len(npydata)}")
 
-
+np.random.seed()
 
 def npydatagenerator(start=0):
     while True:
@@ -184,7 +207,6 @@ def npydatagenerator(start=0):
         idx += 1
         idx %= len(npydata)
 
-np.random.seed()
 
 k=npydatagenerator(np.random.randint(0,num_epochs))
 
@@ -337,7 +359,7 @@ class ICNN(nn.Module):
                 in_channels=mp(f'LAYER:{i-1}:NCHAN',8),
                 out_channels=mp(f'LAYER:{i}:NCHAN',8),
                 kernel_size=mp(f'LAYER:{i}:KSIZE',9),
-                leak=mp(f'LAYER{i}:LEAK',0.0),
+                leak=mp(f'LAYER:{i}:LEAK',0.0),
                 dropout=mp(f'LAYER:{i}:DROPOUT',0.0)))
         self.convs = nn.Sequential(*convs_list)
 
@@ -421,7 +443,7 @@ def train(num_epochs, cnn, k):
                         for ii in range(int(ITERS)-1):
                             nextput = (cnn(output.to(device)))
                             output = nextput
-                    loss = loss_func(output,targetdata[:,0:4,...].to(device))**0.2
+                    loss = loss_func(output,targetdata[:,0:4,...].to(device))
                     print("eval, ",flush=True,end='')
 
                     #loss.requires_grad = True
@@ -499,6 +521,7 @@ def test():
     test_data,test_target = TensorFluidBatch(ktest,1)
     while(True):
         with torch.no_grad():
+            test_data[50:70,50:70] = 0
             test_data = test_data.cuda()
             output = cnn(test_data)
             vorticity = test_data[0,0,...]
@@ -517,7 +540,7 @@ def test():
             else:
                 test_data = output
         pass
-    pass
+    cv2.destroyAllWindows()
 
 if not TRAINING:
     test()
