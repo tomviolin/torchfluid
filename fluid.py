@@ -15,7 +15,7 @@ from scipy.optimize import linear_sum_assignment
 from scipy.signal import fftconvolve
 import pandas as pd
 import copy
-
+ITERS=1
 from torch import optim
 from torch.autograd import Variable
 
@@ -48,7 +48,8 @@ def mp(MPDICT,pn,dflt=None):
         return dflt
 
 def datagenerator():
-    fname = sorted(glob("../lbinfo-*.csv"))[-1]
+    fname = sorted(glob("/home/tomh/intfluids_glut/data/old/*3241.csv"))[-1]
+    print(f"fname={fname}")
     fbase = fname.split("/")[-1].split(".")[-2]
     os.makedirs(f"data/{fbase}",exist_ok=True)
     #print(fbase)
@@ -418,7 +419,7 @@ if '-npy' in sys.argv:  # eventually make this a feature
         except:
             break
 
-    np.save(f'npy{os.path.sep}lbinfo{agent_id}.npy',np.stack(stacked))
+    np.save(f'npy{os.path.sep}lbinfo.npy',np.stack(stacked))
 
     sys.exit(0)
 
