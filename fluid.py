@@ -19,8 +19,10 @@ ITERS=1
 from torch import optim
 from torch.autograd import Variable
 
+program_time = dt.now()
+program_timestamp = program_time.strftime("%Y%m%d_%H%M%S.%f")
 
-def mp(MPDICT,pn,dflt=None):
+def mp(MPDICT,pn,dflt=None,force=None):
     pns = pn.split(":")
     for i in range(len(pns)):
         if pns[i].isnumeric():
@@ -29,6 +31,10 @@ def mp(MPDICT,pn,dflt=None):
             pns[i]='"'+pns[i]+'"'
 
     pnstr = "MPDICT["+"][".join(pns)+"]"
+    if force is not None:
+        exec(pnstr+f" = {np.around(force,6)}")
+        return force
+
     try:
         #print(f"{pnstr}",end='')
         paramval = eval(pnstr)
@@ -41,7 +47,7 @@ def mp(MPDICT,pn,dflt=None):
             numint = np.floor((pmax-pmin)/pint) + 1
             intv = np.random.randint(0,numint)
             paramval = pmin + pint*intv
-            exec(pnstr + f" = {paramval}")
+            exec(pnstr + f" = {np.around(paramval,6)}")
         return paramval
     except Exception as e:
         print(f"PARAM WARNING: {e}: "+pnstr)
@@ -394,6 +400,46 @@ def test():
                 test_data = output
         pass
     cv2.destroyAllWindows()
+
+
+def walktemplate(templ,MP,prefix=''):
+    if (isinstance(templ,list) and len(templ)==3 and
+        (isinstance(templ[0],int) or isinstance(templ[0],float)) and
+        (isinstance(templ[1],int) or isinstance(templ[1],float)) and
+        (isinstance(templ[2],int) or isinstance(templ[2],float))):
+        pfx=prefix[:-1]
+        pnstr = pfx
+        print(f"{pfx}:{templ} => ",end='')
+        print(mp(MP,pfx),end='')
+        pv = mp(MP,pfx) 
+
+        pmin=templ[0]
+        pmax=templ[1]
+        pint=templ[2]
+        numint = np.floor((pmax-pmin)/pint) + 1
+        if np.random.randint(0,10)==0:
+            pv=pv+(np.random.randint(-1,2))*pint
+            print(" ~ ",end='')
+        else:
+            print(" = ",end='')
+        if pv<pmin: pv=pmin
+        if pv > pmax: pv=pmax
+        pv=np.around(pv,6)
+        print(pv)
+        mp(MP,pfx,force=pv)
+        print(mp(MP,pfx))
+
+    elif isinstance(templ,list):
+        for i in range(len(templ)):
+            walktemplate(templ[i],MP,prefix=prefix+f"{i}:")
+    elif isinstance(templ,dict):
+        for key in templ:
+            walktemplate(templ[key],MP,prefix=prefix+f"{key}:")
+    else:
+        pass
+        #print(f"{prefix}:{templ}")
+
+
 # === END OF DEFINES ===
 
 # *** ESTABLISH COMPUTING DEVICE ***
@@ -429,7 +475,7 @@ CLEARING='-newdata' in sys.argv
 if CLEARING:
     if os.path.exists("datadir"):
         os.makedirs(f"archived_data",exist_ok=True)
-        os.rename("datadir",f"archived_data/datadir{agent_id}")
+        os.rename("datadir",f"archived_data/datadir{program_timestamp}")
         os.makedirs("datadir",exist_ok=True)
 
 
@@ -444,122 +490,171 @@ if os.path.exists(ftra):
     print(len(npydata))
 print(f"DATA LOADED: {len(npydata)}")
 
+while True:
 
-# *** WE'RE GOING TO KEEP ALL DATA IN THE .json FILE ***
-# no worries about things being out of sync; I think
-# it makes perfect sense.
-tgpath = "agent_population.json"
-if os.path.exists("datadir/agent_population_working.json"):
-    tgpath = "datadir/agent_population_working.json"
+    # *** WE'RE GOING TO KEEP ALL DATA IN THE .json FILE ***
+    # no worries about things being out of sync; I think
+    # it makes perfect sense.
+    tgpath = "agent_population.json"
+    if os.path.exists("datadir/agent_population_working.json"):
+        tgpath = "datadir/agent_population_working.json"
 
-if os.path.exists(tgpath):
-    # *** population file exists, we're in evolution mode ***
-    THISGEN = json.load(open(tgpath,'r'))
-    pop_size = THISGEN['POP_SIZE']
-    num_survive = THISGEN['NUM_SURVIVE']
-    num_breed = THISGEN['NUM_BREED']
+    if os.path.exists(tgpath):
+        # *** population file exists, we're in evolution mode ***
+        THISGEN = json.load(open(tgpath,'r'))
+        pop_size = THISGEN['POP_SIZE']
+        num_survive = THISGEN['NUM_SURVIVE']
+        num_breed = THISGEN['NUM_BREED']
 
-    while True:
-        # this must act like a state machine so that we can be interrupted
-        # and pick up where we left off easily.
-        if 'AGENTS_RUN' in THISGEN:
-            if len(THISGEN['AGENTS_RUN']) >= pop_size:
-                # we are DONE.
-                sys.exit(0)
-        if 'AGENTS_IN' in THISGEN and len(THISGEN['AGENTS_IN']) > 0:
-            agents_in = list(THISGEN['AGENTS_IN'])
-            MP = next(iter(agents_in))
-            agent_id = list(agents_in.keys())[0]
-        else:
-            agent_time = dt.now()
-            agent_id = agent_time.strftime("%Y%m%d_%H%M%S.%f")
-            if 'TEMPLATE' in THISGEN:
-                MP = copy.deepcopy(THISGEN['TEMPLATE'])
+        while True:
+            # this must act like a state machine so that we can be interrupted
+            # and pick up where we left off easily.
+            if 'AGENTS_RUN' in THISGEN:
+                if len(THISGEN['AGENTS_RUN']) >= pop_size:
+                    # we are DONE.
+                    break
+            if 'AGENTS_IN' in THISGEN and len(THISGEN['AGENTS_IN']) > 0:
+                agents_in = THISGEN['AGENTS_IN']
+                agent_id = list(agents_in.keys())[0]
+                MP=agents_in[agent_id]
             else:
-                MP={}
-        MP['AGENT_ID'] = agent_id
-            
-        print(MP)
+                agent_time = dt.now()
+                agent_id = agent_time.strftime("%Y%m%d_%H%M%S.%f")
+                if 'TEMPLATE' in THISGEN:
+                    MP = copy.deepcopy(THISGEN['TEMPLATE'])
+                else:
+                    MP={}
+            MP['AGENT_ID'] = agent_id
+                
+            print(MP)
 
 
-        TRAINING=not ('-t' in sys.argv or '-tr' in sys.argv)
-        RESUMING='-r' in sys.argv or '-tr' in sys.argv
-        resumeskip=1
-        if sys.argv[-1].isnumeric():
-            resumeskip=int(sys.argv[-1])
-        BATCHSIZE=mp(MP,'BATCHSIZE',16)
-        num_epochs = mp(MP,'NUM_EPOCHS',4000)
-        num_meta_epochs = mp(MP,'NUM_META_EPOCS',1)
-        ITERS=mp(MP,'ITERS',1)
-        SCRAMBLE_SIZE=mp(MP,'SCRAMBLE_SIZE',420)
-        os.environ['CUDA_LAUNCH_BLOCKING']='1'
+            TRAINING=not ('-t' in sys.argv or '-tr' in sys.argv)
+            RESUMING='-r' in sys.argv or '-tr' in sys.argv
+            resumeskip=1
+            if sys.argv[-1].isnumeric():
+                resumeskip=int(sys.argv[-1])
+            BATCHSIZE=mp(MP,'BATCHSIZE',16)
+            num_epochs = mp(MP,'NUM_EPOCHS',4000)
+            num_meta_epochs = mp(MP,'NUM_META_EPOCS',1)
+            ITERS=mp(MP,'ITERS',1)
+            SCRAMBLE_SIZE=mp(MP,'SCRAMBLE_SIZE',420)
+            os.environ['CUDA_LAUNCH_BLOCKING']='1'
 
-        np.random.seed()
+            np.random.seed()
 
-        k=npydatagenerator(np.random.randint(0,num_epochs))
-
-
-        datadir = f"datadir{os.path.sep}{agent_id}"
-        os.makedirs(datadir, exist_ok=True)
-        if TRAINING:
-            print(f"TRAINING: datadir={datadir}")
-
-        if (not TRAINING) or RESUMING:
-            sep=os.path.sep
-            resdatadir= sep.join(sorted(glob(f"datadir{sep}*{sep}cnnstate.dat"))[-resumeskip].split(sep)[:-1])
-            print(f"Loading pre-trained weights from: datadir={resdatadir}")
+            k=npydatagenerator(np.random.randint(0,num_epochs))
 
 
-        cnn = ICNN(MP)
-        #print(cnn)
+            datadir = f"datadir{os.path.sep}{agent_id}"
+            os.makedirs(datadir, exist_ok=True)
+            if TRAINING:
+                print(f"TRAINING: datadir={datadir}")
 
-        loss_func = nn.MSELoss()
-        lossfuncdesc="MSELoss"
-        if False and int(mp(MP,'ITERS')*10+0.5)//2 *2 == int(mp(MP,'ITERS')*10+0.5):
-            loss_func=nn.L1Loss()
-            lossfuncdesc="L1Loss"
-        print(f"LOSS: {lossfuncdesc}")
-
-        optlr = 10**(mp(MP,'INIT_LR',-2))
-        optimizer = optim.Adam(cnn.parameters(), lr = optlr)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,'min',0.5,patience=5)
+            if (not TRAINING) or RESUMING:
+                sep=os.path.sep
+                resdatadir= sep.join(sorted(glob(f"datadir{sep}*{sep}cnnstate.dat"))[-resumeskip].split(sep)[:-1])
+                print(f"Loading pre-trained weights from: datadir={resdatadir}")
 
 
+            cnn = ICNN(MP)
+            #print(cnn)
+
+            loss_func = nn.MSELoss()
+            lossfuncdesc="MSELoss"
+            if False and int(mp(MP,'ITERS')*10+0.5)//2 *2 == int(mp(MP,'ITERS')*10+0.5):
+                loss_func=nn.L1Loss()
+                lossfuncdesc="L1Loss"
+            print(f"LOSS: {lossfuncdesc}")
+
+            optlr = 10**(mp(MP,'INIT_LR',-2))
+            optimizer = optim.Adam(cnn.parameters(), lr = optlr)
+            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,'min',0.5,patience=5)
 
 
-        if (not TRAINING) or RESUMING:
-            try:
-                cnn.load_state_dict(torch.load(f"{resdatadir}{os.path.sep}cnnstate.dat"))
-            except RuntimeError as e:
-                pass
+
+
+            if (not TRAINING) or RESUMING:
+                try:
+                    cnn.load_state_dict(torch.load(f"{resdatadir}{os.path.sep}cnnstate.dat"))
+                except RuntimeError as e:
+                    pass
+                cnn.cuda()
+                print(f"loaded {resdatadir}{os.path.sep}cnnstate.dat")
+
             cnn.cuda()
-            print(f"loaded {resdatadir}{os.path.sep}cnnstate.dat")
-
-        cnn.cuda()
-        cnn.train().cuda()
-        #summary(cnn.cuda(), (1,1,175,256))
-        open(f"{datadir}{os.path.sep}model_params.json","w").write(json.dumps(MP,indent=4))
-        open(f"model_params.json","w").write(json.dumps(MP,indent=4))
-        if TRAINING:
-            print("training.")
-            train(num_epochs, cnn, k)
-            torch.save(cnn.state_dict(), f"{datadir}{os.path.sep}cnnfinalstate.dat")
-            print(f"saved state to {datadir}{os.path.sep}cnnfinalstate.dat")
+            cnn.train().cuda()
+            #summary(cnn.cuda(), (1,1,175,256))
+            open(f"{datadir}{os.path.sep}model_params.json","w").write(json.dumps(MP,indent=4))
+            open(f"model_params.json","w").write(json.dumps(MP,indent=4))
+            if TRAINING:
+                print("training.")
+                train(num_epochs, cnn, k)
+                torch.save(cnn.state_dict(), f"{datadir}{os.path.sep}cnnfinalstate.dat")
+                print(f"saved state to {datadir}{os.path.sep}cnnfinalstate.dat")
 
 
-        # training completed!
-        if 'AGENTS_RUN' not in THISGEN:
-            THISGEN['AGENTS_RUN']={}
-        if 'AGENTS_IN' not in THISGEN:
-            THISGEN['AGENTS_IN']={}
-        THISGEN['AGENTS_RUN'][agent_id] = MP.copy()
-        THISGEN['AGENTS_RUN'][agent_id]['REPORT'] = {
-                'losses': losses,
-                'lossavgs': lossavgs,
-                'lossstds': lossstds
-                }
-        if agent_id in THISGEN['AGENTS_IN']:
-            del THISGEN['AGENTS_IN'][agent_id]
+            # training completed!
+            if 'AGENTS_RUN' not in THISGEN:
+                THISGEN['AGENTS_RUN']={}
+            if 'AGENTS_IN' not in THISGEN:
+                THISGEN['AGENTS_IN']={}
+            THISGEN['AGENTS_RUN'][agent_id] = MP.copy()
+            THISGEN['AGENTS_RUN'][agent_id]['REPORT'] = {
+                    'losses': losses,
+                    'lossavgs': lossavgs,
+                    'lossstds': lossstds
+                    }
+            if agent_id in THISGEN['AGENTS_IN']:
+                del THISGEN['AGENTS_IN'][agent_id]
 
-        json.dump(THISGEN,open('datadir/_IN_agent_population_working.json','w'),indent=4)
-        os.replace('datadir/_IN_agent_population_working.json','datadir/agent_population_working.json')
+            json.dump(THISGEN,open('datadir/_IN_agent_population_working.json','w'),indent=4)
+            os.replace('datadir/_IN_agent_population_working.json','datadir/agent_population_working.json')
+
+        if len(THISGEN['AGENTS_RUN']) >= pop_size:
+            # set up for next generation
+            scores = []
+            for agent in THISGEN['AGENTS_RUN']:
+                scores.append({'agent':agent,'score':THISGEN['AGENTS_RUN'][agent]['REPORT']['losses'][-1]})
+            scores=pd.DataFrame(scores)
+            scores=scores.sort_values('score')
+            print(scores)
+            breeders  = scores.iloc[:THISGEN['NUM_BREED'],:]
+            survivors = scores.iloc[THISGEN['NUM_BREED']:THISGEN['NUM_SURVIVE'],:]
+            print('--breed--')
+            print(breeders)
+            print('--survive--')
+            print(survivors)
+           
+            NEXTGEN=json.load(open('agent_population.json','r'))
+
+            if 'AGENTS_IN' not in NEXTGEN:
+                NEXTGEN['AGENTS_IN'] = {}
+            for breeder in list(breeders['agent']):
+                NEXTGEN['AGENTS_IN'][breeder] = copy.deepcopy(THISGEN['AGENTS_RUN'][breeder])
+                NEXTGEN['AGENTS_IN'][breeder+'A'] = copy.deepcopy(THISGEN['AGENTS_RUN'][breeder])
+                NEXTGEN['AGENTS_IN'][breeder+'A']['AGENT_ID']=breeder+'A'
+                del NEXTGEN['AGENTS_IN'][breeder]['REPORT']
+                del NEXTGEN['AGENTS_IN'][breeder+'A']['REPORT']
+            for survivor in list(survivors['agent']):
+                NEXTGEN['AGENTS_IN'][survivor] = copy.deepcopy(THISGEN['AGENTS_RUN'][survivor])
+                del NEXTGEN['AGENTS_IN'][survivor]['REPORT']
+
+            print(json.dumps(NEXTGEN, indent=2))
+
+            # cause mutations
+            # must walk the template
+
+            template=NEXTGEN['TEMPLATE']
+            agentids=list(NEXTGEN['AGENTS_IN'].keys())
+            for ag in agentids:
+                walktemplate(template, NEXTGEN['AGENTS_IN'][ag])
+            json.dump(NEXTGEN,open('agent_next_gen.json','w'),indent=2)
+
+            loop_time = dt.now()
+            loop_timestamp = loop_time.strftime("%Y%m%d_%H%M%S.%f")
+            os.rename("datadir","prevgen_"+loop_timestamp)
+            os.makedirs("datadir")
+            os.rename("agent_next_gen.json","datadir/agent_population_working.json")
+        else:
+            break
