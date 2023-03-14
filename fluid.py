@@ -22,6 +22,18 @@ from torch.autograd import Variable
 program_time = dt.now()
 program_timestamp = program_time.strftime("%Y%m%d_%H%M%S.%f")
 
+
+
+def childname(pn):
+    cn = pn
+    if cn[-1].isnumeric():
+        cn=cn+"_000001c"
+        return cn
+    sn = int(cn[-7:-1])+1
+    sn=f"{sn:06d}"
+    cn=cn[:-7]+sn+cn[-1]
+    return cn
+
 def mp(MPDICT,pn,dflt=None,force=None):
     pns = pn.split(":")
     for i in range(len(pns)):
@@ -417,8 +429,8 @@ def walktemplate(templ,MP,prefix=''):
         pmax=templ[1]
         pint=templ[2]
         numint = np.floor((pmax-pmin)/pint) + 1
-        if np.random.randint(0,10)==0:
-            pv=pv+(np.random.randint(-1,2))*pint
+        if np.random.randint(0,mp(MP,'MUTATION_PERIOD',1))==0:
+            pv=pv+(np.random.randint(-3,4))*pint
             print(" ~ ",end='')
         else:
             print(" = ",end='')
@@ -615,10 +627,11 @@ while True:
             # set up for next generation
             scores = []
             for agent in THISGEN['AGENTS_RUN']:
-                scores.append({'agent':agent,'score':THISGEN['AGENTS_RUN'][agent]['REPORT']['losses'][-1]})
+                scores.append({'agent':agent,'score':np.min(THISGEN['AGENTS_RUN'][agent]['REPORT']['losses'])})
             scores=pd.DataFrame(scores)
             scores=scores.sort_values('score')
             print(scores)
+            scores.drop(1)
             breeders  = scores.iloc[:THISGEN['NUM_BREED'],:]
             survivors = scores.iloc[THISGEN['NUM_BREED']:THISGEN['NUM_SURVIVE'],:]
             print('--breed--')
@@ -632,10 +645,10 @@ while True:
                 NEXTGEN['AGENTS_IN'] = {}
             for breeder in list(breeders['agent']):
                 NEXTGEN['AGENTS_IN'][breeder] = copy.deepcopy(THISGEN['AGENTS_RUN'][breeder])
-                NEXTGEN['AGENTS_IN'][breeder+'A'] = copy.deepcopy(THISGEN['AGENTS_RUN'][breeder])
-                NEXTGEN['AGENTS_IN'][breeder+'A']['AGENT_ID']=breeder+'A'
+                NEXTGEN['AGENTS_IN'][childname(breeder)] = copy.deepcopy(THISGEN['AGENTS_RUN'][breeder])
+                NEXTGEN['AGENTS_IN'][childname(breeder)]['AGENT_ID']=childname(breeder)
                 del NEXTGEN['AGENTS_IN'][breeder]['REPORT']
-                del NEXTGEN['AGENTS_IN'][breeder+'A']['REPORT']
+                del NEXTGEN['AGENTS_IN'][childname(breeder)]['REPORT']
             for survivor in list(survivors['agent']):
                 NEXTGEN['AGENTS_IN'][survivor] = copy.deepcopy(THISGEN['AGENTS_RUN'][survivor])
                 del NEXTGEN['AGENTS_IN'][survivor]['REPORT']
@@ -647,6 +660,7 @@ while True:
 
             template=NEXTGEN['TEMPLATE']
             agentids=list(NEXTGEN['AGENTS_IN'].keys())
+            #agentids=agentids[NEXTGEN['NUM_BREED']:]
             for ag in agentids:
                 walktemplate(template, NEXTGEN['AGENTS_IN'][ag])
             json.dump(NEXTGEN,open('agent_next_gen.json','w'),indent=2)
