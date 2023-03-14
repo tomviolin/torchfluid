@@ -1,0 +1,50 @@
+{
+    "POP_SIZE": 20,
+    "NUM_SURVIVE": 8,
+    "NUM_BREED": 4,
+    "TEMPLATE": {
+        "INIT_LR": [-3.0,-1.0,0.01],
+        "BATCHSIZE": 1,
+        "NUM_EPOCHS": 200,
+        "NUM_META_EPOCS": 1,
+        "ITERS": 1,
+        "SCRAMBLE_SIZE": 1,
+        "LAYER": [
+            {
+                "NCHAN": [1,8,1],
+                "KSIZE": 3,
+                "LEAK": [0.0,0.5,0.1],
+                "DROPOUT": [0.0,0.5,0.1]
+            },
+            {
+                "NCHAN": [1,32,1],
+                "KSIZE": 3,
+                "LEAK": [0.0,0.5,0.1],
+                "DROPOUT": [0.0,0.5,0.1]
+            },
+            {
+                "NCHAN": [1,32,1],
+                "KSIZE": 3,
+                "LEAK": [0.0,0.5,0.1],
+                "DROPOUT": [0.0,0.5,0.1]
+            },
+            {
+                "NCHAN": [1,32,1],
+                "KSIZE": 3,
+                "LEAK": [0.0,0.5,0.1],
+                "DROPOUT": [0.0,0.5,0.1]
+            },
+            {
+                "NCHAN": [1,32,1],
+                "KSIZE": [3,9,2],
+                "LEAK": [0.0,0.5,0.1],
+                "DROPOUT": [0.0,0.5,0.1]
+            }
+        ],
+        "LAYER_LAST": {
+            "KSIZE": 1,
+            "LEAK": [0.0,0.5,0.1],
+            "DROPOUT": [0.0,0.5,0.1]
+        }
+    }
+}
