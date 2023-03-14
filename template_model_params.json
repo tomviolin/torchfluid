@@ -1,11 +1,9 @@
 {
-    "ROUND": 1,
-    "MODEL_ID": 1001,
-    "INIT_LR": 0.01,
+    "INIT_LR": [-3.0,-1.0,0.01],
     "BATCHSIZE": 1,
     "NUM_EPOCHS": 100,
     "NUM_META_EPOCS": 1,
-    "ITERS": 1.1,
+    "ITERS": 1,
     "SCRAMBLE_SIZE": 1,
     "LAYER": [
         {
@@ -15,7 +13,25 @@
             "DROPOUT": [0.0,0.5,0.1]
         },
         {
-            "NCHAN": [1,8,1],
+            "NCHAN": [1,32,1],
+            "KSIZE": 3,
+            "LEAK": [0.0,0.5,0.1],
+            "DROPOUT": [0.0,0.5,0.1]
+        },
+        {
+            "NCHAN": [1,32,1],
+            "KSIZE": 3,
+            "LEAK": [0.0,0.5,0.1],
+            "DROPOUT": [0.0,0.5,0.1]
+        },
+        {
+            "NCHAN": [1,32,1],
+            "KSIZE": 3,
+            "LEAK": [0.0,0.5,0.1],
+            "DROPOUT": [0.0,0.5,0.1]
+        },
+        {
+            "NCHAN": [1,32,1],
             "KSIZE": [3,9,2],
             "LEAK": [0.0,0.5,0.1],
             "DROPOUT": [0.0,0.5,0.1]

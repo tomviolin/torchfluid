@@ -7,29 +7,20 @@ import cv2
 import torch
 import torch.nn as nn
 import time
+from datetime import datetime as dt
 from glob2 import glob
-timestamp = time.strftime("%Y%m%d_%H%M%S")
 from PIL import Image
 from scipy.spatial.distance import cdist
 from scipy.optimize import linear_sum_assignment
 from scipy.signal import fftconvolve
 import pandas as pd
-device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+import copy
 
-print(f"COMPUTING DEVICE: {device}")
+from torch import optim
+from torch.autograd import Variable
 
 
-if 'MODEL_PARAMS' in os.environ and os.path.exists(os.environ['MODEL_PARAMS']):
-    MP = json.load(open(os.environ['MODEL_PARAMS'],"r"))
-elif os.path.exists('template_model_params.json'):
-    MP = json.load(open('template_model_params.json','r'))
-elif os.path.exists('model_params.json'):
-    MP = json.load(open('model_params.json','r'))
-else:
-    MP = {}
-print(MP)
-
-def mp(pn,dflt=None):
+def mp(MPDICT,pn,dflt=None):
     pns = pn.split(":")
     for i in range(len(pns)):
         if pns[i].isnumeric():
@@ -37,7 +28,7 @@ def mp(pn,dflt=None):
         else:
             pns[i]='"'+pns[i]+'"'
 
-    pnstr = "MP["+"][".join(pns)+"]"
+    pnstr = "MPDICT["+"][".join(pns)+"]"
     try:
         #print(f"{pnstr}",end='')
         paramval = eval(pnstr)
@@ -51,36 +42,10 @@ def mp(pn,dflt=None):
             intv = np.random.randint(0,numint)
             paramval = pmin + pint*intv
             exec(pnstr + f" = {paramval}")
-        #print(f"={paramval}")
         return paramval
     except Exception as e:
-        print(f"ERROR {e}: "+pnstr)
+        print(f"PARAM WARNING: {e}: "+pnstr)
         return dflt
-
-TRAINING=not ('-t' in sys.argv or '-tr' in sys.argv)
-RESUMING='-r' in sys.argv or '-tr' in sys.argv
-CLEARING='-newdata' in sys.argv
-resumeskip=1
-if sys.argv[-1].isnumeric():
-    resumeskip=int(sys.argv[-1])
-BATCHSIZE=mp('BATCHSIZE',16)
-num_epochs = mp('NUM_EPOCHS',4000)
-num_meta_epochs = mp('NUM_META_EPOCS',1)
-ITERS=mp('ITERS',1)
-SCRAMBLE_SIZE=mp('SCRAMBLE_SIZE',420)
-os.environ['CUDA_LAUNCH_BLOCKING']='1'
-#import torch_dct as dct
-
-#from torchvision import datasets
-#from torchvision.transforms import ToTensor
-#from torchinfo import summary
-
-if CLEARING:
-    if os.path.exists("datadir"):
-        os.makedirs(f"archived_data",exist_ok=True)
-        os.rename("datadir",f"archived_data/datadir{timestamp}")
-        os.makedirs("datadir",exist_ok=True)
-
 
 def datagenerator():
     fname = sorted(glob("../lbinfo-*.csv"))[-1]
@@ -161,39 +126,6 @@ def datagenerator():
             flowpV.copy(),
             ))
 
-if '-npy' in sys.argv:  # eventually make this a feature
-    k0 = datagenerator()
-
-    idx=0
-    while True:
-        try:
-            ftrain,ftarg = next(k0)
-            np.save(f'npy{os.path.sep}tra{idx:07d}.npy',ftrain)
-            #np.save(f'npy{os.path.sep}tar{idx:07d}.npy',ftarg)
-            print(".",end='',flush=True)
-            if idx % 80 == 0:
-                print(idx,flush=True)
-            idx += 1
-        except:
-            break
-
-
-npydata = []
-idx=0
-print("LOADING DATA")
-while True:
-    ftra=f'npy{os.path.sep}tra{idx:07d}.npy'
-    if os.path.exists(ftra):
-        npydata.append(np.load(ftra))
-        print(".",end='',flush=True)
-        idx += 1
-        if idx % 100 == 0:
-            print(idx,flush=True)
-    else:
-        break
-print(f"DATA LOADED: {len(npydata)}")
-
-np.random.seed()
 
 def npydatagenerator(start=0):
     while True:
@@ -207,9 +139,6 @@ def npydatagenerator(start=0):
         idx += 1
         idx %= len(npydata)
 
-
-k=npydatagenerator(np.random.randint(0,num_epochs))
-
 def TensorFluidBatch(k,batchsize):
     fmtra = []
     fmtar = []
@@ -222,16 +151,6 @@ def TensorFluidBatch(k,batchsize):
     fm_target2= torch.FloatTensor(np.concatenate(fmtar))
 
     return fm_train2, fm_target2
-
-datadir = f"datadir{os.path.sep}{timestamp}"
-os.makedirs(datadir, exist_ok=True)
-if TRAINING:
-    print(f"TRAINING: datadir={datadir}")
-
-if (not TRAINING) or RESUMING:
-    sep=os.path.sep
-    resdatadir= sep.join(sorted(glob(f"datadir{sep}*{sep}cnnstate.dat"))[-resumeskip].split(sep)[:-1])
-    print(f"Loading pre-trained weights from: datadir={resdatadir}")
 
 class EMLoss(nn.Module):
     def __init__(self):
@@ -260,20 +179,6 @@ class NSLoss(nn.Module):
 
     def forward(self,y,x):
         return (torch.exp(((y[:,0:3,...]-x[:,0:3,...]).abs()).sum()/np.prod(y.shape[0:-2])/100000.0)-1.0)*50
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 def same_padding(in_shape,kernel_size,strides_in):
 
@@ -306,20 +211,6 @@ def same_padding(in_shape,kernel_size,strides_in):
     print(pad_left, pad_right, pad_top, pad_bottom)
     return(pad_top,pad_left)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 class ICNN(nn.Module):
     def conv(in_channels=3,out_channels=3,kernel_size=3,stride=1,padding=(4,4),leak=0.0,pool_size=1,dropout=0.0):
         print(f"in_channels:{in_channels},out_channels:{out_channels},kernel_size:{kernel_size},"+
@@ -339,36 +230,33 @@ class ICNN(nn.Module):
             nn.BatchNorm2d(out_channels)
         )
 
-
-
-
-    def __init__(self):
+    def __init__(self,MPD):
         super(ICNN, self).__init__()
-
+        self.MPD = MPD
         self.conv0 = ICNN.conv(
             in_channels=1,
-            out_channels=mp('LAYER:0:NCHAN',8),
-            kernel_size=mp('LAYER:0:KSIZE',9),
-            leak=mp('LAYER:0:LEAK',0.0),
-            dropout=mp('LAYER:0:DROPOUT',0.0))
+            out_channels=mp(MPD,'LAYER:0:NCHAN',8),
+            kernel_size=mp(MPD,'LAYER:0:KSIZE',9),
+            leak=mp(MPD,'LAYER:0:LEAK',0.0),
+            dropout=mp(MPD,'LAYER:0:DROPOUT',0.0))
 
         convs_list = nn.ModuleList()
-        nlayers = len(mp('LAYER'))
+        nlayers = len(mp(MPD,'LAYER'))
         for i in range(1,nlayers):
             convs_list.append(ICNN.conv(
-                in_channels=mp(f'LAYER:{i-1}:NCHAN',8),
-                out_channels=mp(f'LAYER:{i}:NCHAN',8),
-                kernel_size=mp(f'LAYER:{i}:KSIZE',9),
-                leak=mp(f'LAYER:{i}:LEAK',0.0),
-                dropout=mp(f'LAYER:{i}:DROPOUT',0.0)))
+                in_channels=mp(MPD,f'LAYER:{i-1}:NCHAN',8),
+                out_channels=mp(MPD,f'LAYER:{i}:NCHAN',8),
+                kernel_size=mp(MPD,f'LAYER:{i}:KSIZE',9),
+                leak=mp(MPD,f'LAYER:{i}:LEAK',0.0),
+                dropout=mp(MPD,f'LAYER:{i}:DROPOUT',0.0)))
         self.convs = nn.Sequential(*convs_list)
 
         self.convLast = ICNN.conv(
-            in_channels=mp(f'LAYER:{nlayers-1}:NCHAN',8),
+            in_channels=mp(MPD,f'LAYER:{nlayers-1}:NCHAN',8),
             out_channels=1,
-            kernel_size=mp('LAYER_LAST:KSIZE',9),
-            leak=mp('LAYER_LAST:LEAK',0.0),
-            dropout=mp('LAYER_LAST:DROPOUT',0.0))
+            kernel_size=mp(MPD,'LAYER_LAST:KSIZE',9),
+            leak=mp(MPD,'LAYER_LAST:LEAK',0.0),
+            dropout=mp(MPD,'LAYER_LAST:DROPOUT',0.0))
 
 
 
@@ -379,33 +267,20 @@ class ICNN(nn.Module):
 
         return x1
 
-
-
-cnn = ICNN()
-#print(cnn)
-
-loss_func = nn.MSELoss()
-lossfuncdesc="MSELoss"
-if int(mp('ITERS')*10+0.5)//2 *2 == int(mp('ITERS')*10+0.5):
-    loss_func=nn.L1Loss()
-    lossfuncdesc="L1Loss"
-print(f"LOSS: {lossfuncdesc}")
-
-from torch import optim
-optlr = mp('INIT_LR',0.001)
-optimizer = optim.Adam(cnn.parameters(), lr = optlr)
-scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,'min',0.5,patience=5)
-
-from torch.autograd import Variable
-
 def norm(x):
     #x = np.abs(np.fft.ifft2(xp))
     return (x-x.min())/(x.max()-x.min())
 
-
+losses=[]
+lossavgs=[]
+lossstds=[]
 
 
 def train(num_epochs, cnn, k):
+    global losses,lossavgs,lossstds
+    losses=[]
+    lossavgs=[]
+    lossstds=[]
     cnn.cuda()
     bestloss =1000
     beststd = 1000
@@ -489,31 +364,8 @@ def train(num_epochs, cnn, k):
         print("-"*60)
 
 
-
-if (not TRAINING) or RESUMING:
-    try:
-        cnn.load_state_dict(torch.load(f"{resdatadir}{os.path.sep}cnnstate.dat"))
-    except RuntimeError as e:
-        pass
-    cnn.cuda()
-    print(f"loaded {resdatadir}{os.path.sep}cnnstate.dat")
-
-cnn.cuda()
-cnn.train().cuda()
-#summary(cnn.cuda(), (1,1,175,256))
-open(f"{datadir}{os.path.sep}model_params.json","w").write(json.dumps(MP,indent=4))
-open(f"model_params.json","w").write(json.dumps(MP,indent=4))
-if TRAINING:
-    print("training.")
-    train(num_epochs, cnn, k)
-    torch.save(cnn.state_dict(), f"{datadir}{os.path.sep}cnnfinalstate.dat")
-    print(f"saved state to {datadir}{os.path.sep}cnnfinalstate.dat")
-
-
-ktest = npydatagenerator()
-
-
 def test():
+    ktest = npydatagenerator()
     global test_data
     # Test the model
     cnn.eval()
@@ -541,71 +393,172 @@ def test():
                 test_data = output
         pass
     cv2.destroyAllWindows()
+# === END OF DEFINES ===
 
-if not TRAINING:
-    test()
+# *** ESTABLISH COMPUTING DEVICE ***
+
+device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+print(f"COMPUTING DEVICE: {device}")
+
+# *** OPTION TO GENERATE npy FILE FROM DATA ***
+
+if '-npy' in sys.argv:  # eventually make this a feature
+    k0 = datagenerator()
+
+    idx=0
+    stacked = []
+    while True:
+        try:
+            ftrain,ftarg = next(k0)
+            stacked.append(ftrain)
+            print(".",end='',flush=True)
+            if idx % 100 == 0:
+                print(idx,flush=True)
+            idx += 1
+        except:
+            break
+
+    np.save(f'npy{os.path.sep}lbinfo{agent_id}.npy',np.stack(stacked))
+
+    sys.exit(0)
+
+# *** OPTION TO ARCHIVE PREVIOUS DATA AND START WITH NEW DATADIR ***
+
+CLEARING='-newdata' in sys.argv
+if CLEARING:
+    if os.path.exists("datadir"):
+        os.makedirs(f"archived_data",exist_ok=True)
+        os.rename("datadir",f"archived_data/datadir{agent_id}")
+        os.makedirs("datadir",exist_ok=True)
 
 
-"""
-Poor man's earth mover distance
-(actually it's not that bad!! after reading the article I wasn't that far off,
-in fact this might be better! LOL!
+# *** LOAD THE DATASET ***
+
+npydata = []
+print("LOADING DATA")
+ftra=glob(f'npy{os.path.sep}lbinfo*.npy')[0]
+if os.path.exists(ftra):
+    npydata = np.load(ftra)
+    print(".",end='',flush=True)
+    print(len(npydata))
+print(f"DATA LOADED: {len(npydata)}")
 
 
-consider binary distributions:
+# *** WE'RE GOING TO KEEP ALL DATA IN THE .json FILE ***
+# no worries about things being out of sync; I think
+# it makes perfect sense.
+tgpath = "agent_population.json"
+if os.path.exists("datadir/agent_population_working.json"):
+    tgpath = "datadir/agent_population_working.json"
 
-A: 0 1 0 0 0 0 0 0
-B: 0 0 1 0 0 0 0 0
-C:_0 0 0 0 0 0 1 0  
+if os.path.exists(tgpath):
+    # *** population file exists, we're in evolution mode ***
+    THISGEN = json.load(open(tgpath,'r'))
+    pop_size = THISGEN['POP_SIZE']
+    num_survive = THISGEN['NUM_SURVIVE']
+    num_breed = THISGEN['NUM_BREED']
 
-d(A,C) denotes the distance value between A and C.
+    while True:
+        # this must act like a state machine so that we can be interrupted
+        # and pick up where we left off easily.
+        if 'AGENTS_RUN' in THISGEN:
+            if len(THISGEN['AGENTS_RUN']) >= pop_size:
+                # we are DONE.
+                sys.exit(0)
+        if 'AGENTS_IN' in THISGEN and len(THISGEN['AGENTS_IN']) > 0:
+            agents_in = list(THISGEN['AGENTS_IN'])
+            MP = next(iter(agents_in))
+            agent_id = list(agents_in.keys())[0]
+        else:
+            agent_time = dt.now()
+            agent_id = agent_time.strftime("%Y%m%d_%H%M%S.%f")
+            if 'TEMPLATE' in THISGEN:
+                MP = copy.deepcopy(THISGEN['TEMPLATE'])
+            else:
+                MP={}
+        MP['AGENT_ID'] = agent_id
+            
+        print(MP)
 
-Intuitively, d(A,B) < d(B,C) < d(A,C)
 
-Appplying simple sum of squared differences:
+        TRAINING=not ('-t' in sys.argv or '-tr' in sys.argv)
+        RESUMING='-r' in sys.argv or '-tr' in sys.argv
+        resumeskip=1
+        if sys.argv[-1].isnumeric():
+            resumeskip=int(sys.argv[-1])
+        BATCHSIZE=mp(MP,'BATCHSIZE',16)
+        num_epochs = mp(MP,'NUM_EPOCHS',4000)
+        num_meta_epochs = mp(MP,'NUM_META_EPOCS',1)
+        ITERS=mp(MP,'ITERS',1)
+        SCRAMBLE_SIZE=mp(MP,'SCRAMBLE_SIZE',420)
+        os.environ['CUDA_LAUNCH_BLOCKING']='1'
 
-d(A,B) = sum( 0 1 1 0 0 0 0 0 ) = 2
-d(B,C) = sum( 0 0 1 0 0 0 1 0 ) = 2
-d(A,C) = sum( 0 1 0 0 0 0 1 0 ) = 2
+        np.random.seed()
 
-The primary goal is to always have a gradient present such that for a set of three distributions,
-the two that are "closer" or "more similar" will have a smaller distance between them.  A simple
-um of squared differemces clearly fails this test.
+        k=npydatagenerator(np.random.randint(0,num_epochs))
 
-let's consider a very simple "blur" operation which applies a simple convolution kernel 
-[ 1 2 1 ] to the three distributions above, with zero-padding applied to preserve the size of
-each distribution:
 
-A': 1 2 1 0 0 0 0 0
-B': 0 1 2 1 0 0 0 0
-C': 0 0 0 0 0 1 2 1
+        datadir = f"datadir{os.path.sep}{agent_id}"
+        os.makedirs(datadir, exist_ok=True)
+        if TRAINING:
+            print(f"TRAINING: datadir={datadir}")
 
-let's define d'(x,y) as the sum of the squared differences of the
-convolutions x' and y':
-    d'(A,B) = d(A',B') = sum(1 1 1 1 0 0 0 0) = 4
-    d'(B,C) =            sum(0 1 2 1 0 1 2 1) = 8
-    d'(A,C) =            sum(1 2 1 0 0 1 2 1) = 8
+        if (not TRAINING) or RESUMING:
+            sep=os.path.sep
+            resdatadir= sep.join(sorted(glob(f"datadir{sep}*{sep}cnnstate.dat"))[-resumeskip].split(sep)[:-1])
+            print(f"Loading pre-trained weights from: datadir={resdatadir}")
 
-d'(A,B) < d'(B,C) and d'(A,B) < d'(A,C) but d'(A,C) = d'(B,C).
 
-So, we have partially succeeded by introducing a gradient when the
-differences are small, but when the distance is greater, it "maxes out"
-and there is no more gradient.  It would appear we would need a larger
-kernel.  Let's try
+        cnn = ICNN(MP)
+        #print(cnn)
 
-[ 1 2 3 4 5 4 3 2 1 ]
+        loss_func = nn.MSELoss()
+        lossfuncdesc="MSELoss"
+        if False and int(mp(MP,'ITERS')*10+0.5)//2 *2 == int(mp(MP,'ITERS')*10+0.5):
+            loss_func=nn.L1Loss()
+            lossfuncdesc="L1Loss"
+        print(f"LOSS: {lossfuncdesc}")
 
-again with zero padding.
+        optlr = 10**(mp(MP,'INIT_LR',-2))
+        optimizer = optim.Adam(cnn.parameters(), lr = optlr)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,'min',0.5,patience=5)
 
-A'' = 4 5 4 3 2 1 0 0
-B'' = 3 4 5 4 3 2 1 0
-C'' = 0 0 1 2 3 4 5 4
 
-then:
 
-d''(A,B) = sumsq( 1 1 1 1 1 1 1 0 ) = 7
-d''(B,C) = sumsq( 3 4 4 2 0 2 4 4 ) = sum( 9 16 16 4 0 4 16 16 ) = 81
-d''(A,C) = 102
 
-success.
-"""
+        if (not TRAINING) or RESUMING:
+            try:
+                cnn.load_state_dict(torch.load(f"{resdatadir}{os.path.sep}cnnstate.dat"))
+            except RuntimeError as e:
+                pass
+            cnn.cuda()
+            print(f"loaded {resdatadir}{os.path.sep}cnnstate.dat")
+
+        cnn.cuda()
+        cnn.train().cuda()
+        #summary(cnn.cuda(), (1,1,175,256))
+        open(f"{datadir}{os.path.sep}model_params.json","w").write(json.dumps(MP,indent=4))
+        open(f"model_params.json","w").write(json.dumps(MP,indent=4))
+        if TRAINING:
+            print("training.")
+            train(num_epochs, cnn, k)
+            torch.save(cnn.state_dict(), f"{datadir}{os.path.sep}cnnfinalstate.dat")
+            print(f"saved state to {datadir}{os.path.sep}cnnfinalstate.dat")
+
+
+        # training completed!
+        if 'AGENTS_RUN' not in THISGEN:
+            THISGEN['AGENTS_RUN']={}
+        if 'AGENTS_IN' not in THISGEN:
+            THISGEN['AGENTS_IN']={}
+        THISGEN['AGENTS_RUN'][agent_id] = MP.copy()
+        THISGEN['AGENTS_RUN'][agent_id]['REPORT'] = {
+                'losses': losses,
+                'lossavgs': lossavgs,
+                'lossstds': lossstds
+                }
+        if agent_id in THISGEN['AGENTS_IN']:
+            del THISGEN['AGENTS_IN'][agent_id]
+
+        json.dump(THISGEN,open('datadir/_IN_agent_population_working.json','w'),indent=4)
+        os.replace('datadir/_IN_agent_population_working.json','datadir/agent_population_working.json')
