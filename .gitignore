@@ -7,4 +7,9 @@ venv
 npy
 archived_data
 datadir*
+prevgen_*
+rep.jpg
+model_params.json
+model_params.json
+
 
