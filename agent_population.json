@@ -1,14 +1,15 @@
 {
-    "POP_SIZE": 20,
-    "NUM_SURVIVE": 8,
-    "NUM_BREED": 4,
+    "POP_SIZE": 25,
+    "NUM_SURVIVE": 4,
+    "NUM_BREED": 2,
     "TEMPLATE": {
         "INIT_LR": [-5.0, 1.0,0.01],
-        "BATCHSIZE": [1,4,1],
-        "NUM_EPOCHS": 30,
+        "BATCHSIZE": 1,
+        "NUM_EPOCHS": 110,
         "NUM_META_EPOCS": 1,
         "ITERS": 1,
         "SCRAMBLE_SIZE": 1,
+        "MUTATION_PERIOD": 1,
         "LAYER": [
             {
                 "NCHAN": [1,8,1],
