@@ -1,5 +1,5 @@
 {
-    "INIT_LR": -1.92,
+    "INIT_LR": -1.74,
     "BATCHSIZE": 1,
     "NUM_EPOCHS": 200,
     "NUM_META_EPOCS": 1,
@@ -7,40 +7,40 @@
     "SCRAMBLE_SIZE": 1,
     "LAYER": [
         {
-            "NCHAN": 3,
+            "NCHAN": 7,
             "KSIZE": 3,
-            "LEAK": 0.0,
-            "DROPOUT": 0.0
+            "LEAK": 0.30000000000000004,
+            "DROPOUT": 0.5
         },
         {
-            "NCHAN": 2,
+            "NCHAN": 12,
+            "KSIZE": 3,
+            "LEAK": 0.0,
+            "DROPOUT": 0.4
+        },
+        {
+            "NCHAN": 21,
+            "KSIZE": 3,
+            "LEAK": 0.1,
+            "DROPOUT": 0.1
+        },
+        {
+            "NCHAN": 9,
             "KSIZE": 3,
             "LEAK": 0.2,
-            "DROPOUT": 0.1
+            "DROPOUT": 0.4
         },
         {
-            "NCHAN": 22,
-            "KSIZE": 3,
-            "LEAK": 0.0,
-            "DROPOUT": 0.30000000000000004
-        },
-        {
-            "NCHAN": 2,
-            "KSIZE": 3,
+            "NCHAN": 3,
+            "KSIZE": 7,
             "LEAK": 0.5,
-            "DROPOUT": 0.1
-        },
-        {
-            "NCHAN": 6,
-            "KSIZE": 5,
-            "LEAK": 0.1,
-            "DROPOUT": 0.30000000000000004
+            "DROPOUT": 0.4
         }
     ],
     "LAYER_LAST": {
         "KSIZE": 1,
-        "LEAK": 0.30000000000000004,
+        "LEAK": 0.1,
         "DROPOUT": 0.5
     },
-    "AGENT_ID": "20230313_203034.286920"
+    "AGENT_ID": "20230313_223912.972205"
 }
