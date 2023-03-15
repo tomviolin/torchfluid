@@ -71,6 +71,7 @@ for reps in repdirs:
     ysmooth,minx,miny,ystd,minstdx,minstdy=kalman(yvals) 
     plt.plot(range(xcoord,xcoord+len(ysmooth)),ysmooth, color=repcol)
     plt.plot(xcoord+len(ysmooth)-1,ysmooth[-1], '.',ms=9,color=repcol,alpha=1.0,lw=1.5)
+    plt.text(xcoord+len(ysmooth)-1,ysmooth[-1], lbl[19:])
     
     print(f"minx={minx},miny={miny}")
     plt.plot(xcoord+minx,miny, 'o',ms=14, mfc='#ffffff00',mec=repcol+"ff")
