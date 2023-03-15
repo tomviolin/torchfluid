@@ -41,6 +41,8 @@ def kalman0(y):
         k= k*0.95 + (.05)*0.05
     return yk
 
+
+
 repno=-1
 if len(sys.argv)>1:
     repno = int(sys.argv[-1])
@@ -49,7 +51,26 @@ plt.figure(figsize=(8,5))
 cols = list(plt.rcParams['axes.prop_cycle'])
 
 coli = 0
-datadirs = sorted(glob("foperdir"+os.path.sep+"*"+os.path.sep+"report.txt"))
+allreports = sorted(glob("prevgen*"+os.path.sep+"*"+os.path.sep+"report.txt"))
+genscores= []
+
+for rep in allreports:
+    repsplit = rep.split(os.path.sep)
+    gendir = repsplit[0]
+    agent_id = repsplit[1]
+    d = pd.read_csv(rep,header=None)
+    score=d.iloc[-1,-1]
+
+    genscores.append({"gendir":gendir,"agent_id":agent_id, "score": score})
+
+genscores = pd.DataFrame(genscores)
+print(genscores)
+
+from pandasql import sqldf
+
+result = sqldf("select max(score) as mxsore, 
+
+stop
 
 repdirs=[]
 for i in range(repno,0):
