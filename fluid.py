@@ -303,6 +303,9 @@ def train(num_epochs, cnn, k):
     cnn.cuda()
     bestloss =1000
     beststd = 1000
+    if os.path.exists(f"{datadir}/report.txt"):
+        os.remove(f"{datadir}/report.txt")
+
     try:
         for me in range(num_meta_epochs):
             # Train the model
