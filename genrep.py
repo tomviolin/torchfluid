@@ -41,6 +41,8 @@ def kalman0(y):
         k= k*0.95 + (.05)*0.05
     return yk
 
+
+
 repno=-1
 if len(sys.argv)>1:
     repno = int(sys.argv[-1])
@@ -49,7 +51,26 @@ plt.figure(figsize=(8,5))
 cols = list(plt.rcParams['axes.prop_cycle'])
 
 coli = 0
-datadirs = sorted(glob("foperdir"+os.path.sep+"*"+os.path.sep+"report.txt"))
+allreports = sorted(glob("prevgen*"+os.path.sep+"*"+os.path.sep+"report.txt"))
+genscores= []
+
+for rep in allreports:
+    repsplit = rep.split(os.path.sep)
+    gendir = repsplit[0]
+    agent_id = repsplit[1]
+    d = pd.read_csv(rep,header=None)
+    score=d.iloc[-1,-1]
+
+    genscores.append({"gendir":gendir,"agent_id":agent_id, "score": score})
+
+genscores = pd.DataFrame(genscores)
+print(genscores)
+
+from pandasql import sqldf
+
+result = sqldf("select max(score) as mxsore, 
+
+stop
 
 repdirs=[]
 for i in range(repno,0):
@@ -71,7 +92,6 @@ for reps in repdirs:
     ysmooth,minx,miny,ystd,minstdx,minstdy=kalman(yvals) 
     plt.plot(range(xcoord,xcoord+len(ysmooth)),ysmooth, color=repcol)
     plt.plot(xcoord+len(ysmooth)-1,ysmooth[-1], '.',ms=9,color=repcol,alpha=1.0,lw=1.5)
-    plt.text(xcoord+len(ysmooth)-1,ysmooth[-1], lbl[19:])
     
     print(f"minx={minx},miny={miny}")
     plt.plot(xcoord+minx,miny, 'o',ms=14, mfc='#ffffff00',mec=repcol+"ff")
