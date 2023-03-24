@@ -416,9 +416,17 @@ def test():
         with torch.no_grad():
             print(f"testing: in={test_data.shape}")
             test_data = torch.FloatTensor(test_data).cuda()
-            output = cnn(test_data)
+            output = cnn(test_data).cpu()
             print(f"output={output.shape}")
-            cv2.imshow('test',output[0,0,...].cpu().detach().numpy())
+            # calculate vorticity
+            vorticity = np.arctan(fftconvolve(output[0,1,...],[[-1, 0, 1]],'same')+
+                      fftconvolve(output[0,0,...],[[1],[0],[-1]],'same'))
+            vort=np.zeros(vorticity.shape+(3,))
+            vort[...,0] = np.log(np.abs(vorticity)+1) * (vorticity>=0)
+            vort[...,1] = 0.0*np.abs(vorticity) * (vorticity>=0)
+            vort[...,2] = np.log(np.abs(vorticity)+1) * (vorticity<0)
+            vort=norm(vort)
+            cv2.imshow('test',vort)
             ky = cv2.waitKey(5000)
             if ky in [3,27,81,113]: break
             if ky in [ord('n'),ord("N")]:
@@ -426,8 +434,9 @@ def test():
                 
             else:
                 next_data,test_target=next(ktest)
-                test_data = output.cpu()
-                test_data[:,3:4,...]=torch.FloatTensor(next_data[:,3:4,...])
+                next_data[:,0:2,...] = output.cpu()[:,0:2,...]*1.0
+                next_data[:,3:4,...] = 0
+                test_data = torch.FloatTensor(next_data.copy())
         pass
     cv2.destroyAllWindows()
 
@@ -472,6 +481,9 @@ def walktemplate(templ,MP,prefix=''):
 
 # === END OF DEFINES ===
 
+TRAINING=True
+TESTING= ('-t' in sys.argv or '-tr' in sys.argv or '-rt' in sys.argv)
+RESUMING=False # '-r' in sys.argv or '-tr' in sys.argv or '-rt' in sys.argv
 # *** ESTABLISH COMPUTING DEVICE ***
 
 device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -568,9 +580,6 @@ while True:
                 
             print(MP)
 
-            TRAINING=True
-            TESTING= ('-t' in sys.argv or '-tr' in sys.argv or '-rt' in sys.argv)
-            RESUMING=False # '-r' in sys.argv or '-tr' in sys.argv or '-rt' in sys.argv
             resumeskip=1
             if sys.argv[-1].isnumeric():
                 resumeskip=int(sys.argv[-1])
@@ -633,8 +642,6 @@ while True:
                 torch.save(cnn.state_dict(), f"{datadir}{os.path.sep}cnnfinalstate.dat")
                 print(f"saved state to {datadir}{os.path.sep}cnnfinalstate.dat")
 
-            if TESTING:
-                test()
 
             # training completed!
             if 'AGENTS_RUN' not in THISGEN:
@@ -654,6 +661,7 @@ while True:
             os.replace(f'{DATADIR}/_IN_foper_agent_population_working.json',f'{DATADIR}/foper_agent_population_working.json')
 
         if len(THISGEN['AGENTS_RUN']) >= pop_size:
+            #** DONE WITH THIS GENERATION **
             # set up for next generation
             scores = []
             for agent in THISGEN['AGENTS_RUN']:
@@ -661,6 +669,29 @@ while True:
             scores=pd.DataFrame(scores)
             scores=scores.sort_values('score')
             print(scores)
+
+            if TESTING:
+                MP=copy.deepcopy(THISGEN['AGENTS_RUN'][scores.loc[0,'agent']])
+                cnn = ICNN(MP)
+                try:
+                    cnnstatefile = glob(f"{DATADIR}{os.path.sep}{scores.loc[0,'agent']}{os.path.sep}cnnstate*.dat")[0]
+                    cnn.load_state_dict(torch.load(cnnstatefile))
+                except RuntimeError as e:
+                    print(f"Exception in user code: {e}")
+                    print("-"*60)
+                    traceback.print_exc(file=sys.stdout)
+                    print("-"*60)
+                    sys.exit(0)
+                    pass
+                cnn.cuda()
+                print(f"loaded {cnnstatefile}")
+                print(f"last score: {scores.loc[0,'score']}")
+                input("About to run test - Press ENTER:")
+                test()
+                print("=== done with test, press enter for next generation ===")
+                input("Press ENTER: ")
+
+
             scores.drop(1)
             breeders  = scores.iloc[:THISGEN['NUM_BREED'],:]
             survivors = scores.iloc[THISGEN['NUM_BREED']:THISGEN['NUM_SURVIVE'],:]
