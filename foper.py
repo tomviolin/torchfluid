@@ -14,6 +14,7 @@ from scipy.spatial.distance import cdist
 from scipy.optimize import linear_sum_assignment
 from scipy.signal import fftconvolve
 import pandas as pd
+import torch_dct as dct
 import copy
 ITERS=1
 NPYDIR='npyfoper'
@@ -197,6 +198,14 @@ class EMLoss(nn.Module):
         emd1 = torch.FloatTensor((d1[assignment1].sum() / np.prod(x.shape),))
         emd2 = torch.FloatTensor((d2[assignment2].sum() / np.prod(x.shape),))
         return (emd0+emd1+emd2*0.1)*100.0
+
+
+class SpectralLoss(nn.Module):
+    def __init__(self):
+        super(SpectralLoss,self).__init__()
+
+    def forward(self,y,x):
+        yd = dct.
 
 
 def printargs(**args):
