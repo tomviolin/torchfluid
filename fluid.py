@@ -66,7 +66,7 @@ def mp(MPDICT,pn,dflt=None,force=None):
         return dflt
 
 def datagenerator():
-    fname = sorted(glob("/home/tomh/intfluids_glut/data/old/*3241.csv"))[-1]
+    fname = sorted(glob("/home/tomh/lbinfo*"))[-1] # intfluids_glut/data/old/*3241.csv"))[-1]
     print(f"fname={fname}")
     fbase = fname.split("/")[-1].split(".")[-2]
     os.makedirs(f"data/{fbase}",exist_ok=True)
@@ -122,7 +122,9 @@ def datagenerator():
 
         if len(flowqueue) == int(ITERS):
 
-            """
+            
+            (oldflowp, oldflowv,oldflowpV) = flowqueue.pop()
+
             yield (
                 np.stack((
                 oldflowp[...,0],
@@ -137,8 +139,8 @@ def datagenerator():
                 flowpV
                 ))[np.newaxis,...].copy())
             """
-            (oldflowp, oldflowv,oldflowpV) = flowqueue.pop()
             yield oldflowpV[np.newaxis,np.newaxis,...], flowpV[np.newaxis,np.newaxis,...]
+            """
         flowqueue.append((
             flowp.copy(),
             flowv.copy(),
@@ -303,6 +305,9 @@ def train(num_epochs, cnn, k):
     cnn.cuda()
     bestloss =1000
     beststd = 1000
+    if os.path.exists(f"{datadir}/report.txt"):
+        os.remove(f"{datadir}/report.txt")
+
     try:
         for me in range(num_meta_epochs):
             # Train the model
@@ -467,17 +472,27 @@ if '-npy' in sys.argv:  # eventually make this a feature
     idx=0
     stacked = []
     while True:
+        if False: # idx>=1024:
+            break
         try:
             ftrain,ftarg = next(k0)
+            for i in range(5):
+                print(f"{i}: {np.min(ftrain[0,i,...])},{np.max(ftrain[0,i,...])}")
+            cv2.imshow("targ",ftarg[0,3,...]*20+0.5)
+            if cv2.waitKey(1) in [3,27,64+3]: break
             stacked.append(ftrain)
             print(".",end='',flush=True)
-            if idx % 100 == 0:
+            if idx % 1 == 0:
                 print(idx,flush=True)
             idx += 1
         except:
+            print("Exception in user code:")
+            print("-"*60)
+            traceback.print_exc(file=sys.stdout)
+            print("-"*60)
             break
 
-    np.save(f'npy{os.path.sep}lbinfo.npy',np.stack(stacked))
+    np.save(f'npy{os.path.sep}lbinfo{program_timestamp}.npy',np.stack(stacked))
 
     sys.exit(0)
 
