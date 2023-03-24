@@ -1,6 +1,6 @@
 {
     "POP_SIZE": 25,
-    "NUM_EPOCHS": 500,
+    "NUM_EPOCHS": 600,
     "NUM_SURVIVE": 4,
     "NUM_BREED": 2,
     "MUTATION_PERIOD": 9,

@@ -59,6 +59,10 @@ for i in range(repno,0):
     except:
         continue
 xcoord=0
+txtlbls=[]
+
+EPOCHS=600
+
 for reps in repdirs:
     repcol = cols[coli % 8]['color']
     coli+=1
@@ -66,12 +70,18 @@ for reps in repdirs:
     x=pd.read_csv(reps,header=None)
     yvals=np.log10(np.array(x.iloc[:,-1]))
     lbl=reps.split(os.path.sep)[-2]
-    plt.plot(range(xcoord,xcoord+len(yvals)),yvals,label=lbl, color=repcol,alpha=0.5,lw=0.5)
+    txtlbl = lbl[19:]
+    if lbl[-1]=='c':
+        txtlbl = '$' + lbl[19:22] + '_{' + str(int(lbl[-7:-1]))+ '}$'
+    plt.plot(range(xcoord,xcoord+len(yvals)),yvals,label=txtlbl, color=repcol,alpha=0.9,lw=0.5)
     #ysmooth=savgol_filter(yvals,min(len(yvals)//10+2,115)//2*2+1,1)
     ysmooth,minx,miny,ystd,minstdx,minstdy=kalman(yvals) 
     plt.plot(range(xcoord,xcoord+len(ysmooth)),ysmooth, color=repcol)
     plt.plot(xcoord+len(ysmooth)-1,ysmooth[-1], '.',ms=9,color=repcol,alpha=1.0,lw=1.5)
-    plt.text(xcoord+len(ysmooth)-1,ysmooth[-1], lbl[19:])
+    if len(ysmooth)>EPOCHS-5:
+        txtlbls += [(xcoord+len(ysmooth)-1,ysmooth[-1], ysmooth[-1], txtlbl, repcol)]
+    else:
+        plt.text(xcoord+len(ysmooth)-1,ysmooth[-1], ' '+txtlbl,color=repcol)
     
     print(f"minx={minx},miny={miny}")
     plt.plot(xcoord+minx,miny, 'o',ms=14, mfc='#ffffff00',mec=repcol+"ff")
@@ -80,17 +90,65 @@ for reps in repdirs:
     if '-x' not in sys.argv:
         xcoord += len(ysmooth)
 
-leg = plt.legend(loc='best',prop={'size':6}, ncol=3)
+xlim = list(plt.xlim())
+xlim[1] =EPOCHS+95
+plt.xlim(xlim)
+ylim = list(plt.ylim())
 
-# set the linewidth of each legend object
-if 'legend_handles' in dir(leg):
-    lhandles = leg.legend_handles
-else:
-    lhandles = leg.legendHandles
+R = 0.18 # min distance between labels
 
-for legobj in lhandles:
-    legobj.set_linewidth(1.5)
-    legobj.set_alpha(1.0)
+txtlbla = np.array(txtlbls)
+print (txtlbla)
+while True:
+    chgs = 0
+    for mei in range(txtlbla.shape[0]):
+        ftotal = 0
+        me = float(txtlbla[mei,1])
+        for otheri in range(txtlbla.shape[0]):
+            if mei != otheri:
+                other = float(txtlbla[otheri,1])
+                print(f"me={me:.3f} other={other:.3f}",end='')
+                d=me-other
+                if abs(d) < R:
+                    chgs += 1
+                    if d > 0:
+                        ftotal += R/20
+                    else:
+                        ftotal -= R/20
+                    print(f" CHG={ftotal}")
+                else:
+                    print('')
+        newme = me+ftotal
+        if newme < ylim[0]: newme=ylim[0]
+        if newme > ylim[1]: newme=ylim[1]
+
+        txtlbla[mei,1] = str(newme)
+
+        if newme != me:
+            chgs += 1
+    print(f"=========chgs={chgs}")
+    if chgs == 0:
+        break
+
+print(txtlbla)
+
+for i in range(txtlbla.shape[0]):
+    plt.text(EPOCHS+40,float(txtlbla[i,1]),' '+txtlbla[i,3],va='center_baseline')
+    plt.plot(EPOCHS+40,float(txtlbla[i,1]), '>',ms=3,color=txtlbla[i,4],alpha=1.0,lw=1.5)
+    plt.plot([EPOCHS-1,EPOCHS+40],[float(txtlbla[i,2]),float(txtlbla[i,1])],'--',color=txtlbla[i,4],alpha=1.0,lw=0.9)
+
+if False:
+    leg = plt.legend(loc='best',prop={'size':6}, ncol=3)
+
+    # set the linewidth of each legend object
+    if 'legend_handles' in dir(leg):
+        lhandles = leg.legend_handles
+    else:
+        lhandles = leg.legendHandles
+
+    for legobj in lhandles:
+        legobj.set_linewidth(1.5)
+        legobj.set_alpha(1.0)
 
 
 
