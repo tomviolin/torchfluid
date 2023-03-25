@@ -16,10 +16,10 @@ from scipy.signal import fftconvolve
 import pandas as pd
 import torch_dct as dct
 import copy
-ITERS=1
-NPYDIR='npyfoper'
-DATADIR='foperdir'
-KDSIZE=1
+ITERS = 1
+NPYDIR = 'npyfoper'
+DATADIR = 'foperdir'
+KDSIZE = 1
 from torch import optim
 from torch.autograd import Variable
 
@@ -106,7 +106,6 @@ def lbinfodatagenerator():
         # print(f"flowv.shape={flowv.shape}")
 
         # prepare data
-<<<<<<< HEAD
         # anything > zero in the 'video' layer is maxxed to 255
         flowv[flowv>0]=255
 
@@ -119,25 +118,12 @@ def lbinfodatagenerator():
         flowp0[flowv>0] = 0 # zero out velocity inside obstacles
         flowp1[flowv>0] = 0 #    "  "   "
         flowp2[flowv>0] = 1 # normalize pressure to 1 inside obstacles
-=======
-        flowv[flowv>0]=255
-
-        flowp0 = flowp[...,0]
-        flowp1 = flowp[...,1]
-        flowp2 = flowp[...,2]
-        flowp3 = flowp[...,3]
-
-        flowp0[flowv>0] = 0
-        flowp1[flowv>0] = 0
-        flowp2[flowv>0] = 1
->>>>>>> 2cd5e469a2a9dd946ff7e5bc80011face61cfa15
 
         # calculate vorticity
         flowpV = np.arctan(fftconvolve(flowp1,[[-1, 0, 1]],'same')+
                   fftconvolve(flowp0,[[1],[0],[-1]],'same'))
 
         #print(f"flowpV.shape={flowpV.shape}")
-<<<<<<< HEAD
         flowpV[flowv>0] = 0  # no vorticity inside obstacles either
 
         yield(np.stack((
@@ -152,58 +138,24 @@ def lbinfodatagenerator():
 
 """
 *** CODE TO SPLIT DATA LEFT FOR REFERENCE
-=======
-        flowpV[flowv>0] = 0
-
-        if len(flowqueue) == int(ITERS):
-            (oldflowp, oldflowv,oldflowpV) = flowqueue.pop()
-            oldp,newp=(
-                np.stack((
-                oldflowp[...,0],
-                oldflowp[...,1],
-                oldflowp[...,2],
-                oldflowpV,
-                oldflowv))[np.newaxis,...].copy(),
-                np.stack((
-                flowp[...,0],
-                flowp[...,1],
-                flowp[...,2],
-                flowpV
-                ))[np.newaxis,...].copy())
-            if test:
-                yield oldp[:,[0,1,2,4],...], newp[:,0:3,...]
-            else:
->>>>>>> 2cd5e469a2a9dd946ff7e5bc80011face61cfa15
                 for r in range(KDSIZE,flowp.shape[0]-KDSIZE):
                     for c in range(KDSIZE,flowp.shape[1]-KDSIZE):
                         print('!',end='')
                         yield(
                             oldp[:,:,r-KDSIZE:r+KDSIZE+1,c-KDSIZE:c+KDSIZE+1],
                             newp[:,:,c-KDSIZE:c+KDSIZE+1,c-KDSIZE:c+KDSIZE+1])
-<<<<<<< HEAD
 
          # yield oldflowpV[np.newaxis,np.newaxis,...], flowpV[np.newaxis,np.newaxis,...]
 
-=======
-            """
-            yield oldflowpV[np.newaxis,np.newaxis,...], flowpV[np.newaxis,np.newaxis,...]
-            """
->>>>>>> 2cd5e469a2a9dd946ff7e5bc80011face61cfa15
         flowqueue.append((
             flowp.copy(),
             flowv.copy(),
             flowpV.copy(),
             ))
-<<<<<<< HEAD
 """
 
 
 def npydatagenerator(npydata,start=0):
-=======
-            
-
-def npydatagenerator(start=0):
->>>>>>> 2cd5e469a2a9dd946ff7e5bc80011face61cfa15
     while True:
         ridx = np.random.permutation(len(npydata))
         if np.sum(np.abs(np.diff(ridx))<3) < 3:
@@ -533,7 +485,6 @@ def walktemplate(templ,MP,prefix=''):
         #print(f"{prefix}:{templ}")
 
 
-<<<<<<< HEAD
 # *** LOAD THE DATASET ***
 def load_data(nrecs=3000):
     npyfiledata = []
@@ -596,8 +547,6 @@ def convert_lbinfo_npy():
     sys.exit(0)
 
 
-=======
->>>>>>> 2cd5e469a2a9dd946ff7e5bc80011face61cfa15
 # === END OF DEFINES ===
 
 TRAINING=True
@@ -609,44 +558,12 @@ device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 print(f"COMPUTING DEVICE: {device}")
 
 # *** OPTION TO GENERATE npy FILE FROM DATA ***
-<<<<<<< HEAD
 if '-npy' in sys.argv: 
     convert_lbinfo_npy()
     # note: above call never returns; -npy is like a standalone utility
 
 #*** load npy file data ***
 npydata = load_data()
-=======
-
-if '-npy' in sys.argv:  # eventually make this a feature
-    print("makin' .npy's")
-    k0 = datagenerator()
-    print("generating data")
-    idx=0
-    stacked = []
-    while True:
-        try:
-            ftrain,ftarg = next(k0)
-            stacked.append(ftrain)
-            print(".",end='',flush=True)
-            if idx % 100 == 0:
-                print(idx,flush=True)
-            idx += 1
-        except KeyboardInterrupt as e:
-            print("=== KEYBOARD STOP ===")
-            break
-        except Exception as e:
-            print("Exception in user code:")
-            print("-"*60)
-            traceback.print_exc(file=sys.stdout)
-            print("-"*60)
-            sys.exit(0)
-
-    os.makedirs(NPYDIR,exist_ok=True)
-    np.save(f'{NPYDIR}{os.path.sep}lbinfo.npy',np.stack(stacked))
-
-    sys.exit(0)
->>>>>>> 2cd5e469a2a9dd946ff7e5bc80011face61cfa15
 
 # *** OPTION TO ARCHIVE PREVIOUS DATA AND START WITH NEW DATADIR ***
 
@@ -658,20 +575,6 @@ if CLEARING:
         os.makedirs(DATADIR,exist_ok=True)
 
 
-<<<<<<< HEAD
-
-=======
-# *** LOAD THE DATASET ***
-
-npydata = []
-print("LOADING DATA")
-ftra=glob(f'{NPYDIR}{os.path.sep}lbinfo*.npy')[0]
-if os.path.exists(ftra):
-    npydata = np.load(ftra)
-    print(".",end='',flush=True)
-    print(len(npydata))
-print(f"DATA LOADED: {len(npydata)}")
->>>>>>> 2cd5e469a2a9dd946ff7e5bc80011face61cfa15
 
 while True:
 
@@ -724,11 +627,7 @@ while True:
 
             np.random.seed()
 
-<<<<<<< HEAD
             k=npydatagenerator(npydata, np.random.randint(0,num_epochs))
-=======
-            k=npydatagenerator(np.random.randint(0,num_epochs))
->>>>>>> 2cd5e469a2a9dd946ff7e5bc80011face61cfa15
 
 
             datadir = f"{DATADIR}{os.path.sep}{agent_id}"
