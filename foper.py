@@ -1,30 +1,34 @@
 #!/usr/bin/env python3
-import sys,os,json,gc
-import numpy as np
-import matplotlib.pyplot as plt
+import copy
+import gc
+import json
+import os
+import sys
+import time
 import traceback
+from datetime import datetime as dt
+
 import cv2
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
-import time
-from datetime import datetime as dt
+import torch_dct as dct
 from glob2 import glob
 from PIL import Image
-from scipy.spatial.distance import cdist
 from scipy.optimize import linear_sum_assignment
 from scipy.signal import fftconvolve
-import pandas as pd
-import torch_dct as dct
-import copy
+from scipy.spatial.distance import cdist
+from torch import optim
+from torch.autograd import Variable
+
 ITERS = 1
 NPYDIR = 'npyfoper'
 DATADIR = 'foperdir'
 KDSIZE = 1
-from torch import optim
-from torch.autograd import Variable
 
-program_time = dt.now()
-program_timestamp = program_time.strftime("%Y%m%d_%H%M%S.%f")
+program_timestamp = dt.now().strftime("%Y%m%d_%H%M%S.%f")
 
 
 
@@ -157,7 +161,7 @@ def lbinfodatagenerator():
 
 def npydatagenerator(npydata,start=0):
     while True:
-        ridx = np.random.permutation(len(npydata))
+        ridx = np.random.permutation(len(npydata)-ITERS)
         if np.sum(np.abs(np.diff(ridx))<3) < 3:
             break
 
@@ -204,8 +208,8 @@ class SpectralLoss(nn.Module):
     def __init__(self):
         super(SpectralLoss,self).__init__()
 
-    def forward(self,y,x):
-        yd = dct.
+    #def forward(self,y,x):
+    #    yd = dct.
 
 
 def printargs(**args):
@@ -412,7 +416,7 @@ def train(num_epochs, cnn, k):
 
 
 def test():
-    ktest = datagenerator(test=True)
+    ktest = npydatagenerator(test=True)
     global test_data
     # Test the model
     cnn.eval()
