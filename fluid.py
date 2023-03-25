@@ -15,10 +15,10 @@ from scipy.optimize import linear_sum_assignment
 from scipy.signal import fftconvolve
 import pandas as pd
 import copy
-ITERS=1
+ITERS = 1
 from torch import optim
 from torch.autograd import Variable
-
+# harp
 program_time = dt.now()
 program_timestamp = program_time.strftime("%Y%m%d_%H%M%S.%f")
 
@@ -119,8 +119,6 @@ def datagenerator():
         flowpV[flowv>0] = 0
 
         if len(flowqueue) == int(ITERS):
-
-            
             (oldflowp, oldflowv,oldflowpV) = flowqueue.pop()
 
             yield (
