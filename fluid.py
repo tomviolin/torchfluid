@@ -22,8 +22,6 @@ from torch.autograd import Variable
 program_time = dt.now()
 program_timestamp = program_time.strftime("%Y%m%d_%H%M%S.%f")
 
-
-
 def childname(pn):
     cn = pn
     if cn[-1].isnumeric():
