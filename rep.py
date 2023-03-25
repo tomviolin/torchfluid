@@ -59,10 +59,13 @@ for i in range(repno,0):
     except:
         continue
 xcoord=0
+<<<<<<< HEAD
 txtlbls=[]
 
 EPOCHS=600
 
+=======
+>>>>>>> 2cd5e469a2a9dd946ff7e5bc80011face61cfa15
 for reps in repdirs:
     repcol = cols[coli % 8]['color']
     coli+=1
@@ -70,18 +73,26 @@ for reps in repdirs:
     x=pd.read_csv(reps,header=None)
     yvals=np.log10(np.array(x.iloc[:,-1]))
     lbl=reps.split(os.path.sep)[-2]
+<<<<<<< HEAD
     txtlbl = lbl[19:]
     if lbl[-1]=='c':
         txtlbl = '$' + lbl[19:22] + '_{' + str(int(lbl[-7:-1]))+ '}$'
     plt.plot(range(xcoord,xcoord+len(yvals)),yvals,label=txtlbl, color=repcol,alpha=0.9,lw=0.5)
+=======
+    plt.plot(range(xcoord,xcoord+len(yvals)),yvals,label=lbl, color=repcol,alpha=0.5,lw=0.5)
+>>>>>>> 2cd5e469a2a9dd946ff7e5bc80011face61cfa15
     #ysmooth=savgol_filter(yvals,min(len(yvals)//10+2,115)//2*2+1,1)
     ysmooth,minx,miny,ystd,minstdx,minstdy=kalman(yvals) 
     plt.plot(range(xcoord,xcoord+len(ysmooth)),ysmooth, color=repcol)
     plt.plot(xcoord+len(ysmooth)-1,ysmooth[-1], '.',ms=9,color=repcol,alpha=1.0,lw=1.5)
+<<<<<<< HEAD
     if len(ysmooth)>EPOCHS-5:
         txtlbls += [(xcoord+len(ysmooth)-1,ysmooth[-1], ysmooth[-1], txtlbl, repcol)]
     else:
         plt.text(xcoord+len(ysmooth)-1,ysmooth[-1], ' '+txtlbl,color=repcol)
+=======
+    plt.text(xcoord+len(ysmooth)-1,ysmooth[-1], lbl[19:])
+>>>>>>> 2cd5e469a2a9dd946ff7e5bc80011face61cfa15
     
     print(f"minx={minx},miny={miny}")
     plt.plot(xcoord+minx,miny, 'o',ms=14, mfc='#ffffff00',mec=repcol+"ff")
@@ -90,6 +101,7 @@ for reps in repdirs:
     if '-x' not in sys.argv:
         xcoord += len(ysmooth)
 
+<<<<<<< HEAD
 xlim = list(plt.xlim())
 xlim[1] =EPOCHS+95
 plt.xlim(xlim)
@@ -149,6 +161,19 @@ if False:
     for legobj in lhandles:
         legobj.set_linewidth(1.5)
         legobj.set_alpha(1.0)
+=======
+leg = plt.legend(loc='best',prop={'size':6}, ncol=3)
+
+# set the linewidth of each legend object
+if 'legend_handles' in dir(leg):
+    lhandles = leg.legend_handles
+else:
+    lhandles = leg.legendHandles
+
+for legobj in lhandles:
+    legobj.set_linewidth(1.5)
+    legobj.set_alpha(1.0)
+>>>>>>> 2cd5e469a2a9dd946ff7e5bc80011face61cfa15
 
 
 
