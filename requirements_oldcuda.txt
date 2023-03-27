@@ -1,6 +1,0 @@
- pytorch==1.1.0
- cudatoolkit==9.0
- opencv
- matplotlib
- glob2
- scipy

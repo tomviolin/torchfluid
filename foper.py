@@ -25,10 +25,60 @@ from torch.autograd import Variable
 
 ITERS = 1
 NPYDIR = 'npyfoper'
-DATADIR = 'foperdir'
+DATADIR = 'evo'
 KDSIZE = 1
 
 program_timestamp = dt.now().strftime("%Y%m%d_%H%M%S.%f")
+
+"""
+    data file organization
+
+    an evolutionary model run consists of a series of generations.
+    each generation consists of a collection of agents that are each run once
+    
+    evorun_20230324_172355_654364
+    +---evorunparams.json
+        +---EVOPARAMS
+            +---POP_SIZE
+            +---NUM_EPOCHS
+            +---NUM_SURVIVE
+            +---NUM_BREED
+            +---MUTATION_RATE
+        +---AGENT_TEMPLATE
+        .   +---agent parameters with ranges
+        .   +---BATCHSIZE
+        .   +---INIT_LR
+        .   +---LAYER params
+        .   |   +---[0]
+        .   |   |   +---NCHAN
+        .   |   |   +---KSIZE
+        .   |   |   +---LEAK
+        .   |   |   +---DROPOUT
+        .   |   +---[1]
+        .   |   |   +---NCHAN
+        .   |   |   +---KSIZE
+        .   |   |   +---LEAK
+        .   |   |   +---DROPOUT
+        .   |   +---[2]
+        .   |       +---NCHAN
+        .   |       +---KSIZE
+        .   |       +---LEAK
+        .   |       +---DROPOUT
+        .   +---LAYER_LAST
+        .       +---NCHAN
+        .       +---KSIZE
+        .       +---LEAK
+        .       +---DROPOUT
+
+        
+        +---gen0001
+            +   
+        +---agent_20230324_172355_434532_000
+        +---agent_20230324_172356_657675_000
+"""
+
+
+
 
 
 
@@ -313,11 +363,6 @@ def norm(x):
     #x = np.abs(np.fft.ifft2(xp))
     return (x-x.min())/(x.max()-x.min())
 
-losses=[]
-lossavgs=[]
-lossstds=[]
-
-
 def train(num_epochs, cnn, k):
     global losses,lossavgs,lossstds
     losses=[]
@@ -489,6 +534,28 @@ def walktemplate(templ,MP,prefix=''):
         #print(f"{prefix}:{templ}")
 
 
+class AgentSerializer():
+
+    def agent_serialize(self, agent, prefix=''):
+        if isinstance(agent,list):
+            for i in range(len(agent)):
+                agent_serialize(agent[i],prefix=prefix+f"{i}:")
+        elif isinstance(agent,dict):
+            for key in agent:
+                agent_serialize(agent[key],prefix=prefix+f"{key}:")
+        elif isinstance(agent,int) or isinstance(agent,float) or isinstance(agent,str):
+            self.serial[prefix] = agent
+        else:
+            print(f"WARNING: agent element {prefix} is of illegal type {type(agent)}")
+            pass
+
+    def __init__(self, agent):
+        self.serial = {}
+        self.agent_serialize(agent, prefix='')
+        return self.serial
+
+
+
 # *** LOAD THE DATASET ***
 def load_data(nrecs=3000):
     npyfiledata = []
@@ -570,6 +637,19 @@ if '-npy' in sys.argv:
 npydata = load_data()
 
 # *** OPTION TO ARCHIVE PREVIOUS DATA AND START WITH NEW DATADIR ***
+
+EVOMODE='-evomode' in sys.argv
+if EVOMODE:
+    EVOROOT = 'evo'
+    EVORUN = '{EVOROOT}{os.path.sep}evocurrent.json'
+    if os.path.exists(EVORUN):
+        evoinfo = json.load(open(EVORUN,'r'))
+    else:
+        EVOTEMPLATE = f'{EVOROOT}{os.path.sep}evotemplate.json}'
+
+
+
+
 
 CLEARING='-newdata' in sys.argv
 if CLEARING:

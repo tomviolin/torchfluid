@@ -1,1 +1,0 @@
-micromamba install pytorch==1.1.0=cuda90py37h8b0c50b_0
