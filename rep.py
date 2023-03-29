@@ -8,7 +8,9 @@ from glob2 import glob
 from scipy.signal import savgol_filter
 
 
-def kalman(y):
+def smoother(y):
+    # this is a simple moving average
+    y = np.array(y) 
     navg = 20
     bestloss=100
     beststd=100
@@ -33,13 +35,17 @@ def kalman(y):
         beststd = yk[-1]
     return yk, bestlossepoch,bestloss, ys,beststdepoch,yk[beststdepoch]
     
+
+
 def kalman0(y):
+    # this is a kalman filter
     k = .5
     yk = np.array(y.copy())
     for i in range(1,len(y)):
         yk[i]=yk[i-1]*(1-k) + y[i]*k
         k= k*0.95 + (.05)*0.05
     return yk
+
 
 repno=-1
 if len(sys.argv)>1:
@@ -75,7 +81,7 @@ for reps in repdirs:
         txtlbl = '$' + lbl[19:22] + '_{' + str(int(lbl[-7:-1]))+ '}$'
     plt.plot(range(xcoord,xcoord+len(yvals)),yvals,label=txtlbl, color=repcol,alpha=0.9,lw=0.5)
     #ysmooth=savgol_filter(yvals,min(len(yvals)//10+2,115)//2*2+1,1)
-    ysmooth,minx,miny,ystd,minstdx,minstdy=kalman(yvals) 
+    ysmooth,minx,miny,ystd,minstdx,minstdy=smoother(yvals) 
     plt.plot(range(xcoord,xcoord+len(ysmooth)),ysmooth, color=repcol)
     plt.plot(xcoord+len(ysmooth)-1,ysmooth[-1], '.',ms=9,color=repcol,alpha=1.0,lw=1.5)
     if len(ysmooth)>EPOCHS-5:

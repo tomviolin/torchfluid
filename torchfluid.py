@@ -1,4 +1,34 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Mar 23 17:23:55 2020
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+"""
+
+import argparse
+parser = argparse.ArgumentParser(description='torchfluid.py')
+parser.add_argument('-n', '--npy', action='store_true', help='convert raw lbinfo input to npy files')
+parser.add_argument('-e', '--new-evo', action='store_true', help='create new evo')
+parser.add_argument('-k', '--kdsize', type=int, default=1, help='size of kernel used to chop up the flow field for training')
+parser.add_argument('-r', '--resume', type=str, default=None, help='resume the evo model')
+parser.add_argument('-d', '--debug', action='store_true', help='debug')
+parser.add_argument('-v', '--verbose', action='store_true', help='verbose')
+parser.add_argument('-c', '--cuda', action='store_true', help='cuda')
+parser.add_argument('-q', '--quiet', action='store_true', help='quiet')
+parser.add_argument('-u', '--unittest', action='store_true', help='unittest')
+
 import copy
 import gc
 import json
@@ -22,13 +52,73 @@ from scipy.signal import fftconvolve
 from scipy.spatial.distance import cdist
 from torch import optim
 from torch.autograd import Variable
+from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
 
-ITERS = 1
-NPYDIR = 'npyfoper'
-DATADIR = 'evo'
-KDSIZE = 1
+ITERS = 1 # number of iterations
+NPYDIR = 'npydata' # npydata directory
+EVODIR = 'evo' # evo directory
+KDSIZE = 1 # kernel size
 
-program_timestamp = dt.now().strftime("%Y%m%d_%H%M%S.%f")
+TIMESTAMP = None # timestamp
+RESUME = None # resume
+SAVE = None # save
+LOAD = None # load
+DEBUG = False # debug
+VERBOSE = False # verbose
+PLOT = False # plot
+CUDA = False # cuda
+GPU = 0 # gpu
+MODEL = None # model
+AGENT = None # agent
+BATCHSIZE = None # batchsize
+FILE = None # file
+OUTPUT = None # output
+EXECUTE = None # execute
+WRITE = None # write
+YAML = None # yaml
+ZIP = None # zip
+JSON = None # json
+QUIET = False # quiet
+UNITTEST = False # unittest
+
+# parse command line arguments
+args = parser.parse_args()
+if args.iters: ITERS = args.iters
+if args.npydir: NPYDIR = args.npydir
+if args.evodir: EVODIR = args.evodir
+if args.kdsize: KDSIZE = args.kdsize
+if args.timestamp: TIMESTAMP = args.timestamp
+if args.resume: RESUME = args.resume
+if args.save: SAVE = args.save
+if args.load: LOAD = args.load
+if args.debug: DEBUG = args.debug
+if args.verbose: VERBOSE = args.verbose
+if args.plot: PLOT = args.plot
+if args.cuda: CUDA = args.cuda
+if args.gpu: GPU = args.gpu
+if args.model: MODEL = args.model
+if args.agent: AGENT = args.agent
+if args.batchsize: BATCHSIZE = args.batchsize
+if args.file: FILE = args.file
+if args.output: OUTPUT = args.output
+if args.execute: EXECUTE = args.execute
+if args.write: WRITE = args.write
+if args.yaml: YAML = args.yaml
+if args.zip: ZIP = args.zip
+if args.json: JSON = args.json
+if args.quiet: QUIET = args.quiet
+if args.unittest: UNITTEST = args.unittest
+
+def get_timestamp():
+    """get timestamp"""
+    return dt.now().strftime("%Y%m%d_%H%M%S.%f")[:-3]
+
+def get_program_timestamp():
+    """get program timestamp"""
+    return program_timestamp
+
+program_timestamp = get_timestamp()
 
 """
     data file organization
@@ -77,12 +167,11 @@ program_timestamp = dt.now().strftime("%Y%m%d_%H%M%S.%f")
         +---agent_20230324_172356_657675_000
 """
 
-
-
-
-
-
 def childname(pn):
+    # this is a hack to get around the fact that the last character of the parameter name
+    # is a letter that indicates the type of parameter
+    # this is used to create a unique name for the child parameter
+
     cn = pn
     if cn[-1].isnumeric():
         cn=cn+"_000001c"
@@ -93,6 +182,7 @@ def childname(pn):
     return cn
 
 def mp(MPDICT,pn,dflt=None,force=None):
+    # this function is used to get or set a parameter value
     pns = pn.split(":")
     for i in range(len(pns)):
         if pns[i].isnumeric():
@@ -124,6 +214,8 @@ def mp(MPDICT,pn,dflt=None,force=None):
         return dflt
 
 def lbinfodatagenerator():
+    # this function is used to generate data from the lbinfo model
+    # read last file
     fname = sorted(glob("/home/tomh/lbinfo*.csv"))[-1]
     print(f"fname={fname}")
     fbase = fname.split("/")[-1].split(".")[-2]
@@ -210,6 +302,7 @@ def lbinfodatagenerator():
 
 
 def npydatagenerator(npydata,start=0):
+    # this function generates training (input and target pairs) chosen at random from the npydata
     while True:
         ridx = np.random.permutation(len(npydata)-ITERS)
         if np.sum(np.abs(np.diff(ridx))<3) < 3:
@@ -222,6 +315,8 @@ def npydatagenerator(npydata,start=0):
         idx %= len(npydata)
 
 def TensorFluidBatch(k,batchsize):
+    # this function generates a batch of training data from the data generator k
+    # of size batchsize
     fmtra = []
     fmtar = []
     for i in range(batchsize):
@@ -237,10 +332,15 @@ def TensorFluidBatch(k,batchsize):
     return fm_train2, fm_target2
 
 class EMLoss(nn.Module):
+    # this is the earth mover's distance loss function
     def __init__(self):
         super(EMLoss,self).__init__()
 
     def forward(self,y,x):
+        # this is the forward pass of the loss function
+        # y is the predicted output
+        # x is the target output
+        # cdist is the scipy function for computing the pairwise distance between two sets of points
         return cdist(x[0,0,:,:],y[0,0,:,:])
         d0 = cdist(x.cpu().detach().numpy()[0,0,:,:], y.cpu().detach().numpy()[0,0,:,:])
         d1 = cdist(x.cpu().detach().numpy()[0,1,:,:], y.cpu().detach().numpy()[0,1,:,:])
@@ -255,33 +355,72 @@ class EMLoss(nn.Module):
 
 
 class SpectralLoss(nn.Module):
+    # this is the spectral loss function
+
     def __init__(self):
         super(SpectralLoss,self).__init__()
+
+    def forward(self,y,x):
+        # this is the forward pass of the loss function
+        # y is the predicted output
+        # x is the target output
+        # dct is the scipy function for computing the discrete cosine transform
+        yd = dct(y.cpu().detach().numpy(),norm='ortho')
+        xd = dct(x.cpu().detach().numpy(),norm='ortho')
+        return torch.FloatTensor((np.abs(yd-xd).sum() / np.prod(x.shape),))
 
     #def forward(self,y,x):
     #    yd = dct.
 
+class L1Loss(nn.Module):
+    # this is the L1 loss function
+
+    def __init__(self):
+        super(L1Loss,self).__init__()
+
+    def forward(self,y,x):
+        # this is the forward pass of the loss function
+        # y is the predicted output
+        # x is the target output
+        return torch.FloatTensor((np.abs(y-x).sum() / np.prod(x.shape),))
+
+class L2Loss(nn.Module):
+    # this is the L2 loss function
+
+    def __init__(self):
+        super(L2Loss,self).__init__()
+
+    def forward(self,y,x):
+        # this is the forward pass of the loss function
+        # y is the predicted output
+        # x is the target output
+        return torch.FloatTensor((np.square(y-x).sum() / np.prod(x.shape),))
 
 def printargs(**args):
     print(args)
 
+
 class NSLoss(nn.Module):
+    # navier-stokes loss function
     def __init__(self):
         super(NSLoss,self).__init__()
 
     def forward(self,y,x):
+        # this is the forward pass of the loss function
+        # y is the predicted output
+        # x is the target output
         return (torch.exp(((y[:,0:3,...]-x[:,0:3,...]).abs()).sum()/np.prod(y.shape[0:-2])/100000.0)-1.0)*50
 
 def same_padding(in_shape,kernel_size,strides_in):
-
+    # this function computes the padding needed to ensure that the output of a convolutional layer
+    # has the same shape as the input
     in_height, in_width = in_shape
     filter_height, filter_width = kernel_size
     strides=(None,strides_in[0],strides_in[1])
     out_height = np.ceil(float(in_height) / float(strides[1]))
     out_width  = np.ceil(float(in_width) / float(strides[2]))
 
-#The total padding applied along the height and width is computed as:
-
+    # The total padding applied along the height and width is computed as:
     if (in_height % strides[1] == 0):
         pad_along_height = max(filter_height - strides[1], 0)
     else:
@@ -304,6 +443,12 @@ def same_padding(in_shape,kernel_size,strides_in):
     return(pad_top,pad_left)
 
 class ICNN(nn.Module):
+    # this class was arbitrarily named ICNN. The "I" doesn't stand for inverse.
+    # This class is intended to be trained with the Navier-Stokes flow equations.
+    # The input to the network is a 2D velocity field, a pressure field, and a mask field defining
+    # arbitrary boundary geometry. The output is a 2D velocity field and a pressure field.
+    # The network is trained to predict the velocity and pressure fields that satisfy the Navier-Stokes
+    # equations. The network is trained with the NSLoss function defined above.
     def conv(in_channels=3,out_channels=3,kernel_size=3,stride=1,padding=(4,4),leak=0.0,pool_size=1,dropout=0.0):
         print(f"in_channels:{in_channels},out_channels:{out_channels},kernel_size:{kernel_size},"+
                 f"stride:{stride},padding:{padding},leak:{leak},pool_size:{pool_size},dropout:{dropout}")
@@ -349,8 +494,6 @@ class ICNN(nn.Module):
             kernel_size=mp(MPD,'LAYER_LAST:KSIZE',9),
             leak=mp(MPD,'LAYER_LAST:LEAK',0.0),
             dropout=mp(MPD,'LAYER_LAST:DROPOUT',0.0))
-
-
 
     def forward(self,x):
         x1 = self.conv0(x)
@@ -497,6 +640,7 @@ def test():
 
 
 def walktemplate(templ,MP,prefix=''):
+    # this function walks the template and calls mp() for each parameter
     if (isinstance(templ,list) and len(templ)==3 and
         (isinstance(templ[0],int) or isinstance(templ[0],float)) and
         (isinstance(templ[1],int) or isinstance(templ[1],float)) and
@@ -535,7 +679,7 @@ def walktemplate(templ,MP,prefix=''):
 
 
 class AgentSerializer():
-
+    # this class serializes an agent into a dictionary
     def agent_serialize(self, agent, prefix=''):
         if isinstance(agent,list):
             for i in range(len(agent)):
@@ -558,6 +702,7 @@ class AgentSerializer():
 
 # *** LOAD THE DATASET ***
 def load_data(nrecs=3000):
+    # this function loads the dataset from the npy files
     npyfiledata = []
     print("LOADING DATA")
     ftras=sorted(glob(f'{NPYDIR}{os.path.sep}lbinfo*.npy'))
@@ -579,6 +724,7 @@ def load_data(nrecs=3000):
     return np.concatenate(npylist,axis=0)
 
 def convert_lbinfo_npy():
+    # this function converts the lbinfo file into a series of .npy files
     print("makin' .npy's")
     k0 = lbinfodatagenerator()
     print("generating data")
@@ -636,11 +782,22 @@ if '-npy' in sys.argv:
 #*** load npy file data ***
 npydata = load_data()
 
-# *** OPTION TO ARCHIVE PREVIOUS DATA AND START WITH NEW DATADIR ***
 
-EVOMODE='-evomode' in sys.argv
-if EVOMODE:
-    EVOROOT = 'evo'
+# default behavior is to continue where we left off. 
+# however there needs to be overrides to that behavior, which
+# need to be taken care of first.
+
+# *** OPTION TO ARCHIVE PREVIOUS EVOLUTION AND START WITH NEW EVODIR ***
+# we don't need to "archive" as much as "close the books on" the current evo model if any.
+
+# current evo model lives in:
+#    evo/current_evo/evo_{timestamp}/
+
+# to make the current evo no longer current, it simply needs to be moved
+# to the evo/prev_evos/ directory.
+
+if '-newevo' in sys.argv
+    if 
     EVORUN = '{EVOROOT}{os.path.sep}evocurrent.json'
     if os.path.exists(EVORUN):
         evoinfo = json.load(open(EVORUN,'r'))
@@ -651,7 +808,6 @@ if EVOMODE:
 
 
 
-CLEARING='-newdata' in sys.argv
 if CLEARING:
     if os.path.exists(DATADIR):
         os.makedirs(f"foper_archived_data",exist_ok=True)
