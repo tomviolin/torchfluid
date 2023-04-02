@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import time
 from glob2 import glob
 from scipy.signal import savgol_filter
-
+import json
 
 def smoother(y):
     # this is a simple moving average
@@ -51,11 +51,11 @@ repno=-1
 if len(sys.argv)>1:
     repno = int(sys.argv[-1])
 
-plt.figure(figsize=(8,5))
+plt.figure(figsize=(8,8))
 cols = list(plt.rcParams['axes.prop_cycle'])
 
 coli = 0
-datadirs = sorted(glob("foperdir"+os.path.sep+"*"+os.path.sep+"report.txt"))
+datadirs = sorted(glob("evo/current_evo/evo_*/current_gen/gen_*/"+os.path.sep+"*"+os.path.sep+"report.txt"))
 
 repdirs=[]
 for i in range(repno,0):
@@ -66,9 +66,9 @@ for i in range(repno,0):
         continue
 xcoord=0
 txtlbls=[]
-
-EPOCHS=600
-
+gen_template_path = glob("evo/current_evo/evo_*/current_gen/gen_*/gen_population_working.json")[0]
+THISGEN = json.load(open(gen_template_path,'r'))
+EPOCHS=THISGEN["NUM_EPOCHS"]
 for reps in repdirs:
     repcol = cols[coli % 8]['color']
     coli+=1
@@ -85,9 +85,15 @@ for reps in repdirs:
     plt.plot(range(xcoord,xcoord+len(ysmooth)),ysmooth, color=repcol)
     plt.plot(xcoord+len(ysmooth)-1,ysmooth[-1], '.',ms=9,color=repcol,alpha=1.0,lw=1.5)
     if len(ysmooth)>EPOCHS-5:
-        txtlbls += [(xcoord+len(ysmooth)-1,ysmooth[-1], ysmooth[-1], txtlbl, repcol)]
+        endscore=ysmooth[-1]
+        end50score=ysmooth[-50]
+        sdelta=end50score-endscore
+        projectedscore = endscore - sdelta
+        score=endscore
+        txtlbls += [(xcoord+len(ysmooth)-1,score, ysmooth[-1], txtlbl, repcol,score)]
     else:
-        plt.text(xcoord+len(ysmooth)-1,ysmooth[-1], ' '+txtlbl,color=repcol)
+        plt.plot(xcoord+len(ysmooth)-1,ysmooth[-1], '.',ms=60,mec=repcol,mfc=repcol, alpha=0.7,lw=1.5)
+        plt.text(xcoord+len(ysmooth)-1,ysmooth[-1], ' '+txtlbl,color="white", alpha=1.0,weight="bold", ha="center", va="center")
     
     print(f"minx={minx},miny={miny}")
     plt.plot(xcoord+minx,miny, 'o',ms=14, mfc='#ffffff00',mec=repcol+"ff")
@@ -101,11 +107,11 @@ xlim[1] =EPOCHS+95
 plt.xlim(xlim)
 ylim = list(plt.ylim())
 
-R = 0.18 # min distance between labels
+R = 0.100 # min distance between labels
 
 txtlbla = np.array(txtlbls)
 print (txtlbla)
-while True:
+for qp in range(200):
     chgs = 0
     for mei in range(txtlbla.shape[0]):
         ftotal = 0
@@ -118,15 +124,15 @@ while True:
                 if abs(d) < R:
                     chgs += 1
                     if d > 0:
-                        ftotal += R/20
+                        ftotal += R/10
                     else:
-                        ftotal -= R/20
+                        ftotal -= R/10
                     print(f" CHG={ftotal}")
                 else:
                     print('')
         newme = me+ftotal
-        if newme < ylim[0]: newme=ylim[0]
-        if newme > ylim[1]: newme=ylim[1]
+        if newme < ylim[0]: newme=ylim[0]+(ylim[0]-newme)/100
+        if newme > ylim[1]: newme=ylim[1]-(newme-ylim[1])/100
 
         txtlbla[mei,1] = str(newme)
 
@@ -139,9 +145,9 @@ while True:
 print(txtlbla)
 
 for i in range(txtlbla.shape[0]):
-    plt.text(EPOCHS+40,float(txtlbla[i,1]),' '+txtlbla[i,3],va='center_baseline')
+    plt.text(EPOCHS+40,float(txtlbla[i,1]),' '+txtlbla[i,3]+":"+txtlbla[i,5],va='center_baseline')
     plt.plot(EPOCHS+40,float(txtlbla[i,1]), '>',ms=3,color=txtlbla[i,4],alpha=1.0,lw=1.5)
-    plt.plot([EPOCHS-1,EPOCHS+40],[float(txtlbla[i,2]),float(txtlbla[i,1])],'--',color=txtlbla[i,4],alpha=1.0,lw=0.9)
+    plt.plot([EPOCHS-1,EPOCHS+40],[float(txtlbla[i,5]),float(txtlbla[i,1])],'--',color=txtlbla[i,4],alpha=1.0,lw=0.9)
 
 if False:
     leg = plt.legend(loc='best',prop={'size':6}, ncol=3)

@@ -1,0 +1,27 @@
+{
+    "POP_SIZE": 20,
+    "NUM_EPOCHS": 100,
+    "NUM_SURVIVE": 8,
+    "NUM_BREED": 6,
+    "MUTATION_PERIOD": 3,
+    "TEMPLATE": {
+        "INIT_LR": [-5.0, -1.0,0.01],
+        "BATCHSIZE": [1,5,1],
+        "NUM_META_EPOCS": 1,
+        "ITERS": 1,
+        "SCRAMBLE_SIZE": 1,
+        "LAYER": [
+            {
+                "NCHAN": [1,8,1],
+                "KSIZE": 3,
+                "LEAK": [0.0,0.9,0.01],
+                "DROPOUT": [0.0,0.5,0.01]
+            }
+        ],
+        "LAYER_LAST": {
+            "KSIZE": 1,
+            "LEAK": [0.0,0.9,0.01],
+            "DROPOUT": [0.0,0.9,0.01]
+        }
+    }
+}

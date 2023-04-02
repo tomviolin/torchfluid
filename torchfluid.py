@@ -33,6 +33,7 @@ import copy
 import gc
 import json
 import os
+import shutil
 import sys
 import time
 import traceback
@@ -52,8 +53,8 @@ from scipy.signal import fftconvolve
 from scipy.spatial.distance import cdist
 from torch import optim
 from torch.autograd import Variable
-from torch.utils.tensorboard import SummaryWriter
-from tqdm import tqdm
+#from torch.utils.tensorboard import SummaryWriter
+#from tqdm import tqdm
 
 ITERS = 1 # number of iterations
 NPYDIR = 'npydata' # npydata directory
@@ -84,35 +85,13 @@ UNITTEST = False # unittest
 
 # parse command line arguments
 args = parser.parse_args()
-if args.iters: ITERS = args.iters
-if args.npydir: NPYDIR = args.npydir
-if args.evodir: EVODIR = args.evodir
 if args.kdsize: KDSIZE = args.kdsize
-if args.timestamp: TIMESTAMP = args.timestamp
 if args.resume: RESUME = args.resume
-if args.save: SAVE = args.save
-if args.load: LOAD = args.load
-if args.debug: DEBUG = args.debug
-if args.verbose: VERBOSE = args.verbose
-if args.plot: PLOT = args.plot
-if args.cuda: CUDA = args.cuda
-if args.gpu: GPU = args.gpu
-if args.model: MODEL = args.model
-if args.agent: AGENT = args.agent
-if args.batchsize: BATCHSIZE = args.batchsize
-if args.file: FILE = args.file
-if args.output: OUTPUT = args.output
-if args.execute: EXECUTE = args.execute
-if args.write: WRITE = args.write
-if args.yaml: YAML = args.yaml
-if args.zip: ZIP = args.zip
-if args.json: JSON = args.json
-if args.quiet: QUIET = args.quiet
-if args.unittest: UNITTEST = args.unittest
-
+VERBOSE = args.verbose
+DEBUG = args.debug
 def get_timestamp():
     """get timestamp"""
-    return dt.now().strftime("%Y%m%d_%H%M%S.%f")[:-3]
+    return dt.now().strftime("%Y%m%d_%H%M%S.%f")
 
 def get_program_timestamp():
     """get program timestamp"""
@@ -120,56 +99,7 @@ def get_program_timestamp():
 
 program_timestamp = get_timestamp()
 
-"""
-    data file organization
-
-    an evolutionary model run consists of a series of generations.
-    each generation consists of a collection of agents that are each run once
-    
-    evorun_20230324_172355_654364
-    +---evorunparams.json
-        +---EVOPARAMS
-            +---POP_SIZE
-            +---NUM_EPOCHS
-            +---NUM_SURVIVE
-            +---NUM_BREED
-            +---MUTATION_RATE
-        +---AGENT_TEMPLATE
-        .   +---agent parameters with ranges
-        .   +---BATCHSIZE
-        .   +---INIT_LR
-        .   +---LAYER params
-        .   |   +---[0]
-        .   |   |   +---NCHAN
-        .   |   |   +---KSIZE
-        .   |   |   +---LEAK
-        .   |   |   +---DROPOUT
-        .   |   +---[1]
-        .   |   |   +---NCHAN
-        .   |   |   +---KSIZE
-        .   |   |   +---LEAK
-        .   |   |   +---DROPOUT
-        .   |   +---[2]
-        .   |       +---NCHAN
-        .   |       +---KSIZE
-        .   |       +---LEAK
-        .   |       +---DROPOUT
-        .   +---LAYER_LAST
-        .       +---NCHAN
-        .       +---KSIZE
-        .       +---LEAK
-        .       +---DROPOUT
-
-        
-        +---gen0001
-            +   
-        +---agent_20230324_172355_434532_000
-        +---agent_20230324_172356_657675_000
-"""
-
 def childname(pn):
-    # this is a hack to get around the fact that the last character of the parameter name
-    # is a letter that indicates the type of parameter
     # this is used to create a unique name for the child parameter
 
     cn = pn
@@ -192,7 +122,12 @@ def mp(MPDICT,pn,dflt=None,force=None):
 
     pnstr = "MPDICT["+"][".join(pns)+"]"
     if force is not None:
-        exec(pnstr+f" = {np.around(force,6)}")
+        if isinstance(force,str):
+            expr = pnstr+f" = '{force}'"
+        else:
+            expr = pnstr+f" = {np.around(force,6)}"
+        if DEBUG: print(f"EXEC: {expr}")
+        exec(expr)
         return force
 
     try:
@@ -312,7 +247,7 @@ def npydatagenerator(npydata,start=0):
     while True:
         yield npydata[ridx[idx]],npydata[(ridx[idx]+int(ITERS+.05)) % len(npydata)]
         idx += 1
-        idx %= len(npydata)
+        idx %= len(npydata)-int(ITERS+0.05)
 
 def TensorFluidBatch(k,batchsize):
     # this function generates a batch of training data from the data generator k
@@ -449,9 +384,10 @@ class ICNN(nn.Module):
     # arbitrary boundary geometry. The output is a 2D velocity field and a pressure field.
     # The network is trained to predict the velocity and pressure fields that satisfy the Navier-Stokes
     # equations. The network is trained with the NSLoss function defined above.
+
     def conv(in_channels=3,out_channels=3,kernel_size=3,stride=1,padding=(4,4),leak=0.0,pool_size=1,dropout=0.0):
-        print(f"in_channels:{in_channels},out_channels:{out_channels},kernel_size:{kernel_size},"+
-                f"stride:{stride},padding:{padding},leak:{leak},pool_size:{pool_size},dropout:{dropout}")
+        #print(f"in_channels:{in_channels},out_channels:{out_channels},kernel_size:{kernel_size},"+
+        #        f"stride:{stride},padding:{padding},leak:{leak},pool_size:{pool_size},dropout:{dropout}")
         padding=(kernel_size//2,kernel_size//2)
         return nn.Sequential(
             nn.Conv2d(
@@ -526,7 +462,7 @@ def train(num_epochs, cnn, k):
             state_dict=None
             savedepoch=None
             for epoch in range(num_epochs):
-                verb= (epoch % 1 == 0)
+                verb= (epoch % 1 == 0) and VERBOSE
                 traindata,targetdata = TensorFluidBatch(k,BATCHSIZE)
                 traindata=traindata.cuda()
                 targetdata=targetdata.cuda()
@@ -538,7 +474,10 @@ def train(num_epochs, cnn, k):
                 #plt.imsave(f"{datadir}/{epoch:07d}ty1.png",norm(targetdata[0,1,...].cpu().detach().numpy()))
                 #plt.imsave(f"{datadir}/{epoch:07d}ty2.png",norm(targetdata[0,2,...].cpu().detach().numpy()))
                 for i in range(0,total_step):
-                    if verb: print (f'Epoch [{epoch + 1}/{num_epochs}], shapein:{traindata.shape}, tr/tg:{traindata[0,0,1,1]:+8f}/{targetdata[0,0,1,1]:+8f}  ',end='',flush=True)
+                    if verb: 
+                        print (f'Epoch [{epoch + 1}/{num_epochs}], shapein:{traindata.shape}, tr/tg:{traindata[0,0,1,1]:+8f}/{targetdata[0,0,1,1]:+8f}  ',end='',flush=True)
+                    else:
+                        print(".",end='',flush=True)
                     # gives batch data, normalize x when iterate train_loader
                     #b_x = Variable(images)   # batch x
                     #b_y = Variable(labels)   # batch y
@@ -594,7 +533,7 @@ def train(num_epochs, cnn, k):
                 #if loss.item() < 0.0002: break
             if state_dict is not None:
                 torch.save(state_dict, f"{datadir}{os.path.sep}cnnstate{savedepoch:06d}.dat")
-                print(f"saved state of epoch {savedepoch} to {datadir}{os.path.sep}cnnstate{savedepoch:06d}.dat")
+                if VERBOSE: print(f"saved state of epoch {savedepoch} to {datadir}{os.path.sep}cnnstate{savedepoch:06d}.dat")
 
     except Exception:
         print("Exception in user code:")
@@ -647,25 +586,25 @@ def walktemplate(templ,MP,prefix=''):
         (isinstance(templ[2],int) or isinstance(templ[2],float))):
         pfx=prefix[:-1]
         pnstr = pfx
-        print(f"{pfx}:{templ} => ",end='')
-        print(mp(MP,pfx),end='')
+        if DEBUG: print(f"{pfx}:{templ} => ",end='')
+        if DEBUG: print(mp(MP,pfx),end='')
         pv = mp(MP,pfx) 
 
         pmin=templ[0]
         pmax=templ[1]
         pint=templ[2]
         numint = np.floor((pmax-pmin)/pint) + 1
-        if np.random.randint(0,mutation_period)==0:
+        if np.random.randint(0,mutation_period)==1:
             pv=pv+(np.random.randint(-3,4))*pint
-            print(" ~ ",end='')
+            if DEBUG: print(" ~ ",end='')
         else:
-            print(" = ",end='')
+            if DEBUG: print(" = ",end='')
         if pv<pmin: pv=pmin
         if pv > pmax: pv=pmax
         pv=np.around(pv,6)
-        print(pv)
+        if DEBUG: print(pv)
         mp(MP,pfx,force=pv)
-        print(mp(MP,pfx))
+        if DEBUG: print(mp(MP,pfx))
 
     elif isinstance(templ,list):
         for i in range(len(templ)):
@@ -678,26 +617,55 @@ def walktemplate(templ,MP,prefix=''):
         #print(f"{prefix}:{templ}")
 
 
-class AgentSerializer():
-    # this class serializes an agent into a dictionary
-    def agent_serialize(self, agent, prefix=''):
-        if isinstance(agent,list):
-            for i in range(len(agent)):
-                agent_serialize(agent[i],prefix=prefix+f"{i}:")
-        elif isinstance(agent,dict):
-            for key in agent:
-                agent_serialize(agent[key],prefix=prefix+f"{key}:")
-        elif isinstance(agent,int) or isinstance(agent,float) or isinstance(agent,str):
-            self.serial[prefix] = agent
+def _agent_serialize(obj,agent, prefix=''):
+    
+    if isinstance(agent,list):
+        for i in range(len(agent)):
+            _agent_serialize(obj,agent[i],prefix=prefix+f"{i}:")
+    elif isinstance(agent,dict):
+        for key in agent:
+            _agent_serialize(obj,agent[key],prefix=prefix+f"{key}:")
+    elif isinstance(agent,int) or isinstance(agent,float) or isinstance(agent,str):
+        obj[prefix[:-1]] = agent
+    else:
+        print(f"WARNING: agent element {prefix} is of illegal type {type(agent)}")
+        pass
+
+def agent_serialize(agent):
+    obj = {}
+    _agent_serialize(obj, agent,prefix='')
+    if DEBUG: print(obj)
+    return obj
+
+def agent_deserialize(ser_agent):
+    newagent = copy.deepcopy(THISGEN['TEMPLATE'])
+    for dolt in ser_agent.keys():
+        if DEBUG: print(f"mp(newagent,{dolt},force={ser_agent[dolt]})")
+        mp(newagent,dolt,force=ser_agent[dolt])
+    return newagent
+
+def diploid(agent1, agent2):
+    cagent1 = copy.deepcopy(agent1)
+    cagent2 = copy.deepcopy(agent2)
+    if 'REPORT' in cagent1: del cagent1['REPORT']
+    if 'REPORT' in cagent2: del cagent2['REPORT']
+    seragent1 = agent_serialize(cagent1)
+    seragent2 = agent_serialize(cagent2)
+    seragent3 = copy.deepcopy(seragent1)
+
+    for dolt in seragent3.keys():
+        fromagent1 = seragent1[dolt]
+        fromagent2 = seragent2[dolt]
+        if np.random.randint(0,2)==0:
+            seragent3[dolt] = fromagent1
         else:
-            print(f"WARNING: agent element {prefix} is of illegal type {type(agent)}")
-            pass
-
-    def __init__(self, agent):
-        self.serial = {}
-        self.agent_serialize(agent, prefix='')
-        return self.serial
-
+            seragent3[dolt] = fromagent2
+    if DEBUG: print("=== diploid result ===")
+    if DEBUG: print(seragent3)
+    if DEBUG: print("=== diploid deserialized ===")
+    k = agent_deserialize(seragent3)
+    if DEBUG: print(k)
+    return k
 
 
 # *** LOAD THE DATASET ***
@@ -719,9 +687,10 @@ def load_data(nrecs=3000):
                 break
             npylist += [npyfiledata]
             recsloaded += len(npyfiledata)
-    
-    print(f"DATA LOADED: {len(npyfiledata)}")
-    return np.concatenate(npylist,axis=0)
+   
+    alldata = np.concatenate(npylist,axis=0)
+    print(f"DATA LOADED: {len(alldata)}")
+    return alldata
 
 def convert_lbinfo_npy():
     # this function converts the lbinfo file into a series of .npy files
@@ -796,217 +765,289 @@ npydata = load_data()
 # to make the current evo no longer current, it simply needs to be moved
 # to the evo/prev_evos/ directory.
 
-if '-newevo' in sys.argv
-    if 
-    EVORUN = '{EVOROOT}{os.path.sep}evocurrent.json'
-    if os.path.exists(EVORUN):
-        evoinfo = json.load(open(EVORUN,'r'))
+# the new evo model will be created in the evo/current_evo/ directory
+# and will be named evo_{timestamp}/
+
+if args.new_evo:
+    # must close out the old evolution if it exists.
+    #first check to see if there's an evo there
+    evo_paths = glob("evo/current_evo/evo_*")
+    if len(evo_paths) > 0:
+        evo_path = evo_paths[0]
+        evo_id = os.path.basename(evo_path)
+        os.makedirs("evo/prev_evos",exist_ok=True)
+        os.rename(evo_path,f"evo/prev_evos/{evo_id}")
+
+# determine if a current evo is in progress
+evo_starting_template_path = "evo_starting_template.json"
+evo_primary_template_path = "evo/evo_primary_template.json"
+if not os.path.exists(evo_primary_template_path):
+    if not os.path.exists(evo_starting_template_path):
+        print(f"no {evo_primary_template_path} or even {evo_starting_template_path}.")
+        print("GIVING UP.")
+        sys.exit(0)
     else:
-        EVOTEMPLATE = f'{EVOROOT}{os.path.sep}evotemplate.json}'
+        os.makedirs("evo",exist_ok=True)
+        shutil.copy(evo_starting_template_path, evo_primary_template_path)
+
+evo_paths = glob("evo/current_evo/evo_*")
+if len(evo_paths) > 0:
+    # yes there is. load up the path & ID info
+    evo_path = evo_paths[0]
+    evo_id = os.path.basename(evo_path)
+    evo_template_path = evo_path+"/evo_template.json"
+    if not os.path.exists(evo_template_path):
+        shutil.copy("evo/evo_primary_template.json",evo_template_path)
+else:
+    # no current evo, must create one
+    print(f"no current evo, must create one.")
+    # to be sure
+    os.makedirs("evo/current_evo",exist_ok=True)
+    evo_id = "evo_"+get_timestamp()
+    evo_path=f"evo/current_evo/{evo_id}"
+    os.makedirs(evo_path,exist_ok=True)
+    evo_template_path = evo_path+"/evo_template.json"
+    if not os.path.exists(evo_template_path):
+        shutil.copy("evo/evo_primary_template.json",evo_template_path)
+
+# current evo is established, now:
+while True: # loop through generations
+    # is there a generation in progress?
+    gen_paths = glob(evo_path+"/current_gen/gen_*")
+    if len(gen_paths) > 0:
+        gen_path = gen_paths[0]
+        gen_id = os.path.basename(gen_path)
+        gen_working_path = gen_path+"/gen_population_working.json"
+    else:
+        # make a generation
+        gen_id = "gen_"+get_timestamp()
+        gen_path = evo_path+"/current_gen/"+gen_id
+        gen_working_path = gen_path+"/gen_population_working.json"
+        os.makedirs(gen_path,exist_ok=True)
+        shutil.copy(evo_template_path,gen_working_path)
+        # this is saved as a record of what the template was at the time this generation was run
+        shutil.copy(evo_template_path,gen_path+"/gen_evo_template.json")
+
+    THISGEN = json.load(open(gen_working_path,"r"))
+    pop_size = THISGEN['POP_SIZE']
+    num_survive = THISGEN['NUM_SURVIVE']
+    num_breed = THISGEN['NUM_BREED']
+    mutation_period = THISGEN['MUTATION_PERIOD']
+
+
+    ## loop through agents ##
+    while True:
+        # this must act like a state machine so that we can be interrupted
+        # and pick up where we left off easily.
+        if 'AGENTS_RUN' in THISGEN:
+            if len(THISGEN['AGENTS_RUN']) >= pop_size:
+                # we are DONE.
+                break
+        if 'AGENTS_IN' in THISGEN and len(THISGEN['AGENTS_IN']) > 0:
+            agents_in = THISGEN['AGENTS_IN']
+            agent_id = list(agents_in.keys())[0]
+            MP=agents_in[agent_id]
+        else:
+            # create a new agent
+            agent_id = get_timestamp()
+            if 'TEMPLATE' in THISGEN:
+                MP = copy.deepcopy(THISGEN['TEMPLATE'])
+            else:
+                MP={}
+        MP['AGENT_ID'] = agent_id
+        datadir=f"{gen_path}/{agent_id}"
+        if DEBUG: print("---- raw template ----")
+        if DEBUG: print(MP)
+        if DEBUG: print("---walking---")
+        walktemplate(THISGEN['TEMPLATE'],MP)
+        if DEBUG: print("--- walked ---")
+        if DEBUG: print(MP)
+        BATCHSIZE=mp(MP,'BATCHSIZE',16)
+        num_epochs = THISGEN['NUM_EPOCHS']
+        num_meta_epochs = mp(MP,'NUM_META_EPOCS',1)
+        ITERS=mp(MP,'ITERS',1)
+        SCRAMBLE_SIZE=mp(MP,'SCRAMBLE_SIZE',420)
+        os.environ['CUDA_LAUNCH_BLOCKING']='1'
+
+        np.random.seed()
+
+        k=npydatagenerator(npydata, np.random.randint(0,num_epochs))
+
+
+        datadir = f"{gen_path}/{agent_id}"
+        os.makedirs(datadir, exist_ok=True)
+        if TRAINING:
+            print(f"TRAINING: datadir={datadir}")
+
+        #if (not TRAINING) or RESUMING:
+        #    sep=os.path.sep
+        #    resdatadir= sep.join(sorted(glob(f"{DATADIR}{sep}*{sep}cnnstate.dat"))[-resumeskip].split(sep)[:-1])
+        #    print(f"Loading pre-trained weights from: datadir={resdatadir}")
+
+        cnn = ICNN(MP)
+        #print(cnn)
+
+        loss_func = nn.MSELoss()
+        lossfuncdesc="MSELoss"
+        if False and int(mp(MP,'ITERS')*10+0.5)//2 *2 == int(mp(MP,'ITERS')*10+0.5):
+            loss_func=nn.L1Loss()
+            lossfuncdesc="L1Loss"
+        print(f"LOSS: {lossfuncdesc}")
+
+        optlr = 10**(mp(MP,'INIT_LR',-2))
+        optimizer = optim.Adam(cnn.parameters(), lr = optlr)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,'min',0.5,patience=5)
 
 
 
 
+        #if (not TRAINING) or RESUMING:
+        #    try:
+        #        cnn.load_state_dict(torch.load(f"{resdatadir}{os.path.sep}cnnstate.dat"))
+        #    except RuntimeError as e:
+        #        pass
+        #    cnn.cuda()
+        #    print(f"loaded {resdatadir}{os.path.sep}cnnstate.dat")
 
-if CLEARING:
-    if os.path.exists(DATADIR):
-        os.makedirs(f"foper_archived_data",exist_ok=True)
-        os.rename(DATADIR,f"foper_archived_data/{DATADIR}{program_timestamp}")
-        os.makedirs(DATADIR,exist_ok=True)
+        cnn.cuda()
+        cnn.train().cuda()
+        #summary(cnn.cuda(), (1,1,175,256))
+        open(f"{datadir}{os.path.sep}model_params.json","w").write(json.dumps(MP,indent=4))
+        #open(f"model_params.json","w").write(json.dumps(MP,indent=4))
+        if TRAINING:
+            if DEBUG: print("training.")
+            train(num_epochs, cnn, k)
+            torch.save(cnn.state_dict(), f"{datadir}{os.path.sep}cnnfinalstate.dat")
+            if DEBUG: print(f"saved state to {datadir}{os.path.sep}cnnfinalstate.dat")
 
 
+        # training completed!
+        if 'AGENTS_RUN' not in THISGEN:
+            THISGEN['AGENTS_RUN']={}
+        if 'AGENTS_IN' not in THISGEN:
+            THISGEN['AGENTS_IN']={}
+        THISGEN['AGENTS_RUN'][agent_id] = MP.copy()
+        THISGEN['AGENTS_RUN'][agent_id]['REPORT'] = {
+                'losses': losses,
+                'lossavgs': lossavgs,
+                'lossstds': lossstds
+                }
+        if agent_id in THISGEN['AGENTS_IN']:
+            del THISGEN['AGENTS_IN'][agent_id]
 
-while True:
+        json.dump(THISGEN,open(f'{gen_path}/_IN_gen_population_working.json','w'),indent=4)
+        os.replace(f'{gen_path}/_IN_gen_population_working.json',f'{gen_path}/gen_population_working.json')
 
-    # *** WE'RE GOING TO KEEP ALL DATA IN THE .json FILE ***
-    # no worries about things being out of sync; I think
-    # it makes perfect sense.
-    tgpath = "foper_agent_population.json"
-    if os.path.exists(f"{DATADIR}/foper_agent_population_working.json"):
-        tgpath = f"{DATADIR}/foper_agent_population_working.json"
+    if len(THISGEN['AGENTS_RUN']) >= pop_size:
+        #** DONE WITH THIS GENERATION **
+        # set up for next generation
+        scores = []
+        for agent in THISGEN['AGENTS_RUN']:
+            scorelist = np.array(THISGEN['AGENTS_RUN'][agent]['REPORT']['lossavgs'])
+            # calculate projected score in 50 epochs by going back 50 epochs and projecting
+            realendscore = scorelist[-1]
+            endscore = np.log(scorelist[-1])
+            score50fromend = np.log(scorelist[-50])
+            scorechangelast50 = score50fromend - endscore
+            projectedscore = np.exp(endscore - scorechangelast50)
+            scores.append({'agent':agent,'score':realendscore })
+        scores=pd.DataFrame(scores)
+        scores=scores.sort_values('score')
+        if DEBUG: print(scores)
+        scores.to_csv(f"{gen_path}/scores.csv")
+        if TESTING:
+            MP=copy.deepcopy(THISGEN['AGENTS_RUN'][scores.loc[0,'agent']])
+            cnn = ICNN(MP)
+            try:
+                cnnstatefile = glob(f"{DATADIR}{os.path.sep}{scores.loc[0,'agent']}{os.path.sep}cnnstate*.dat")[0]
+                cnn.load_state_dict(torch.load(cnnstatefile))
+            except RuntimeError as e:
+                print(f"Exception in user code: {e}")
+                print("-"*60)
+                traceback.print_exc(file=sys.stdout)
+                print("-"*60)
+                sys.exit(0)
+                pass
+            cnn.cuda()
+            print(f"loaded {cnnstatefile}")
+            print(f"last score: {scores.loc[0,'score']}")
+            input("About to run test - Press ENTER:")
+            test()
+            print("=== done with test, press enter for next generation ===")
+            input("Press ENTER: ")
 
-    if os.path.exists(tgpath):
-        # *** population file exists, we're in evolution mode ***
-        THISGEN = json.load(open(tgpath,'r'))
+
+        scores.drop(1)
+        breeders  = scores.iloc[:THISGEN['NUM_BREED'],:]
+        survivors = scores.iloc[THISGEN['NUM_BREED']:THISGEN['NUM_SURVIVE'],:]
+        if DEBUG: print('--breed--')
+        if DEBUG: print(breeders)
+        if DEBUG: print('--survive--')
+        if DEBUG: print(survivors)
+        if not os.path.exists(f'{gen_working_path}'):
+            print(f"FATAL: {gen_working_path} missing")
+            sys.exit(0)
+
+        NEXTGEN=json.load(open(f'{evo_template_path}','r'))
+
+        if 'AGENTS_IN' not in NEXTGEN:
+            NEXTGEN['AGENTS_IN'] = {}
+        breedlist = list(breeders['agent'])
+        for i in range(0,len(breedlist),2):
+            newspawn = get_timestamp()
+            if DEBUG: print(f"spawning {breedlist[i]} x {breedlist[i+1]}")
+            NEXTGEN['AGENTS_IN'][childname(breedlist[i])] =   diploid(THISGEN['AGENTS_RUN'][breedlist[i]],
+                                                                      THISGEN['AGENTS_RUN'][breedlist[i+1]])
+            if DEBUG: print(childname(breedlist[i]))
+            if DEBUG: print(NEXTGEN['AGENTS_IN'][childname(breedlist[i])]) #['AGENT_ID'] = childname(breedlist[i])
+            NEXTGEN['AGENTS_IN'][childname(breedlist[i])]['AGENT_ID'] = childname(breedlist[i])
+            NEXTGEN['AGENTS_IN'][childname(breedlist[i+1])] = diploid(THISGEN['AGENTS_RUN'][breedlist[i]],
+                                                                      THISGEN['AGENTS_RUN'][breedlist[i+1]])
+            NEXTGEN['AGENTS_IN'][childname(breedlist[i+1])]['AGENT_ID'] = childname(breedlist[i+1])
+            #del NEXTGEN['AGENTS_IN'][breedlist[i]]['REPORT']
+            #del NEXTGEN['AGENTS_IN'][breedlist[i+1]]['REPORT']
+            NEXTGEN['AGENTS_IN'][breedlist[i]] = copy.deepcopy(THISGEN['AGENTS_RUN'][breedlist[i]])
+            del NEXTGEN['AGENTS_IN'][breedlist[i]]['REPORT']
+        """ OLD MYTOSIS METHOD 
+        for breeder in list(breeders['agent']):
+            NEXTGEN['AGENTS_IN'][breeder] = copy.deepcopy(THISGEN['AGENTS_RUN'][breeder])
+            NEXTGEN['AGENTS_IN'][childname(breeder)] = copy.deepcopy(THISGEN['AGENTS_RUN'][breeder])
+            NEXTGEN['AGENTS_IN'][childname(breeder)]['AGENT_ID']=childname(breeder)
+            del NEXTGEN['AGENTS_IN'][breeder]['REPORT']
+            del NEXTGEN['AGENTS_IN'][childname(breeder)]['REPORT']
+        """
+        for survivor in list(survivors['agent']):
+            NEXTGEN['AGENTS_IN'][survivor] = copy.deepcopy(THISGEN['AGENTS_RUN'][survivor])
+            del NEXTGEN['AGENTS_IN'][survivor]['REPORT']
+
+        if DEBUG: print(json.dumps(NEXTGEN, indent=2))
+
+        # cause mutations
+        # must walk the template
+
+        template=NEXTGEN['TEMPLATE']
+        agentids=list(NEXTGEN['AGENTS_IN'].keys())
+        #agentids=agentids[NEXTGEN['NUM_BREED']:]
+        for ag in agentids[1:]:
+            walktemplate(template, NEXTGEN['AGENTS_IN'][ag])
+        json.dump(NEXTGEN,open(f'{evo_path}/next_gen.json','w'),indent=2)
+
+        # move old generation out of current_gen and into prev_gens
+        gen_dest = f"{evo_path}/prev_gens/{gen_id}"
+        os.makedirs(f"{evo_path}/prev_gens",exist_ok=True)
+        os.rename(gen_path,gen_dest)
+        # make new generation
+
+        gen_id = f"gen_{get_timestamp()}"
+        gen_path = f"{evo_path}/current_gen/{gen_id}"
+        gen_working_path = gen_path+"/gen_population_working.json"
+        os.makedirs(gen_path)
+        os.rename(f"{evo_path}/next_gen.json",f"{gen_working_path}")
+        shutil.copy(evo_template_path,f"{gen_path}/gen_evo_template.json")
+        THISGEN = json.load(open(gen_working_path,"r"))
         pop_size = THISGEN['POP_SIZE']
         num_survive = THISGEN['NUM_SURVIVE']
         num_breed = THISGEN['NUM_BREED']
         mutation_period = THISGEN['MUTATION_PERIOD']
-
-        while True:
-            # this must act like a state machine so that we can be interrupted
-            # and pick up where we left off easily.
-            if 'AGENTS_RUN' in THISGEN:
-                if len(THISGEN['AGENTS_RUN']) >= pop_size:
-                    # we are DONE.
-                    break
-            if 'AGENTS_IN' in THISGEN and len(THISGEN['AGENTS_IN']) > 0:
-                agents_in = THISGEN['AGENTS_IN']
-                agent_id = list(agents_in.keys())[0]
-                MP=agents_in[agent_id]
-            else:
-                agent_time = dt.now()
-                agent_id = agent_time.strftime("%Y%m%d_%H%M%S.%f")
-                if 'TEMPLATE' in THISGEN:
-                    MP = copy.deepcopy(THISGEN['TEMPLATE'])
-                else:
-                    MP={}
-            MP['AGENT_ID'] = agent_id
-                
-            print(MP)
-
-            resumeskip=1
-            if sys.argv[-1].isnumeric():
-                resumeskip=int(sys.argv[-1])
-            BATCHSIZE=mp(MP,'BATCHSIZE',16)
-            num_epochs = THISGEN['NUM_EPOCHS']
-            num_meta_epochs = mp(MP,'NUM_META_EPOCS',1)
-            ITERS=mp(MP,'ITERS',1)
-            SCRAMBLE_SIZE=mp(MP,'SCRAMBLE_SIZE',420)
-            os.environ['CUDA_LAUNCH_BLOCKING']='1'
-
-            np.random.seed()
-
-            k=npydatagenerator(npydata, np.random.randint(0,num_epochs))
-
-
-            datadir = f"{DATADIR}{os.path.sep}{agent_id}"
-            os.makedirs(datadir, exist_ok=True)
-            if TRAINING:
-                print(f"TRAINING: datadir={datadir}")
-
-            if (not TRAINING) or RESUMING:
-                sep=os.path.sep
-                resdatadir= sep.join(sorted(glob(f"{DATADIR}{sep}*{sep}cnnstate.dat"))[-resumeskip].split(sep)[:-1])
-                print(f"Loading pre-trained weights from: datadir={resdatadir}")
-
-
-            cnn = ICNN(MP)
-            #print(cnn)
-
-            loss_func = nn.MSELoss()
-            lossfuncdesc="MSELoss"
-            if False and int(mp(MP,'ITERS')*10+0.5)//2 *2 == int(mp(MP,'ITERS')*10+0.5):
-                loss_func=nn.L1Loss()
-                lossfuncdesc="L1Loss"
-            print(f"LOSS: {lossfuncdesc}")
-
-            optlr = 10**(mp(MP,'INIT_LR',-2))
-            optimizer = optim.Adam(cnn.parameters(), lr = optlr)
-            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,'min',0.5,patience=5)
-
-
-
-
-            if (not TRAINING) or RESUMING:
-                try:
-                    cnn.load_state_dict(torch.load(f"{resdatadir}{os.path.sep}cnnstate.dat"))
-                except RuntimeError as e:
-                    pass
-                cnn.cuda()
-                print(f"loaded {resdatadir}{os.path.sep}cnnstate.dat")
-
-            cnn.cuda()
-            cnn.train().cuda()
-            #summary(cnn.cuda(), (1,1,175,256))
-            open(f"{datadir}{os.path.sep}model_params.json","w").write(json.dumps(MP,indent=4))
-            #open(f"model_params.json","w").write(json.dumps(MP,indent=4))
-            if TRAINING:
-                print("training.")
-                train(num_epochs, cnn, k)
-                torch.save(cnn.state_dict(), f"{datadir}{os.path.sep}cnnfinalstate.dat")
-                print(f"saved state to {datadir}{os.path.sep}cnnfinalstate.dat")
-
-
-            # training completed!
-            if 'AGENTS_RUN' not in THISGEN:
-                THISGEN['AGENTS_RUN']={}
-            if 'AGENTS_IN' not in THISGEN:
-                THISGEN['AGENTS_IN']={}
-            THISGEN['AGENTS_RUN'][agent_id] = MP.copy()
-            THISGEN['AGENTS_RUN'][agent_id]['REPORT'] = {
-                    'losses': losses,
-                    'lossavgs': lossavgs,
-                    'lossstds': lossstds
-                    }
-            if agent_id in THISGEN['AGENTS_IN']:
-                del THISGEN['AGENTS_IN'][agent_id]
-
-            json.dump(THISGEN,open(f'{DATADIR}/_IN_foper_agent_population_working.json','w'),indent=4)
-            os.replace(f'{DATADIR}/_IN_foper_agent_population_working.json',f'{DATADIR}/foper_agent_population_working.json')
-
-        if len(THISGEN['AGENTS_RUN']) >= pop_size:
-            #** DONE WITH THIS GENERATION **
-            # set up for next generation
-            scores = []
-            for agent in THISGEN['AGENTS_RUN']:
-                scores.append({'agent':agent,'score':np.min(THISGEN['AGENTS_RUN'][agent]['REPORT']['losses'])})
-            scores=pd.DataFrame(scores)
-            scores=scores.sort_values('score')
-            print(scores)
-
-            if TESTING:
-                MP=copy.deepcopy(THISGEN['AGENTS_RUN'][scores.loc[0,'agent']])
-                cnn = ICNN(MP)
-                try:
-                    cnnstatefile = glob(f"{DATADIR}{os.path.sep}{scores.loc[0,'agent']}{os.path.sep}cnnstate*.dat")[0]
-                    cnn.load_state_dict(torch.load(cnnstatefile))
-                except RuntimeError as e:
-                    print(f"Exception in user code: {e}")
-                    print("-"*60)
-                    traceback.print_exc(file=sys.stdout)
-                    print("-"*60)
-                    sys.exit(0)
-                    pass
-                cnn.cuda()
-                print(f"loaded {cnnstatefile}")
-                print(f"last score: {scores.loc[0,'score']}")
-                input("About to run test - Press ENTER:")
-                test()
-                print("=== done with test, press enter for next generation ===")
-                input("Press ENTER: ")
-
-
-            scores.drop(1)
-            breeders  = scores.iloc[:THISGEN['NUM_BREED'],:]
-            survivors = scores.iloc[THISGEN['NUM_BREED']:THISGEN['NUM_SURVIVE'],:]
-            print('--breed--')
-            print(breeders)
-            print('--survive--')
-            print(survivors)
-            if not os.path.exists('foper_agent_population.json'):
-                print("FATAL: foper_agent_population.json missing")
-                sys.exit(0)
-            NEXTGEN=json.load(open('foper_agent_population.json','r'))
-
-            if 'AGENTS_IN' not in NEXTGEN:
-                NEXTGEN['AGENTS_IN'] = {}
-            for breeder in list(breeders['agent']):
-                NEXTGEN['AGENTS_IN'][breeder] = copy.deepcopy(THISGEN['AGENTS_RUN'][breeder])
-                NEXTGEN['AGENTS_IN'][childname(breeder)] = copy.deepcopy(THISGEN['AGENTS_RUN'][breeder])
-                NEXTGEN['AGENTS_IN'][childname(breeder)]['AGENT_ID']=childname(breeder)
-                del NEXTGEN['AGENTS_IN'][breeder]['REPORT']
-                del NEXTGEN['AGENTS_IN'][childname(breeder)]['REPORT']
-            for survivor in list(survivors['agent']):
-                NEXTGEN['AGENTS_IN'][survivor] = copy.deepcopy(THISGEN['AGENTS_RUN'][survivor])
-                del NEXTGEN['AGENTS_IN'][survivor]['REPORT']
-
-            print(json.dumps(NEXTGEN, indent=2))
-
-            # cause mutations
-            # must walk the template
-
-            template=NEXTGEN['TEMPLATE']
-            agentids=list(NEXTGEN['AGENTS_IN'].keys())
-            #agentids=agentids[NEXTGEN['NUM_BREED']:]
-            for ag in agentids[1:]:
-                walktemplate(template, NEXTGEN['AGENTS_IN'][ag])
-            json.dump(NEXTGEN,open('foper_agent_next_gen.json','w'),indent=2)
-
-            loop_time = dt.now()
-            loop_timestamp = loop_time.strftime("%Y%m%d_%H%M%S.%f")
-            os.rename(DATADIR,"prevgen_"+loop_timestamp)
-            os.makedirs(DATADIR)
-            os.rename("foper_agent_next_gen.json",f"{DATADIR}/foper_agent_population_working.json")
-        else:
-            break
+    else:
+        break
