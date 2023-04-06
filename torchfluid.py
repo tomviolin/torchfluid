@@ -28,6 +28,7 @@ parser.add_argument('-v', '--verbose', action='store_true', help='verbose')
 parser.add_argument('-c', '--cuda', action='store_true', help='cuda')
 parser.add_argument('-q', '--quiet', action='store_true', help='quiet')
 parser.add_argument('-u', '--unittest', action='store_true', help='unittest')
+parser.add_argument('-l', '--loadrecs', type=int,default=6000, help='number of recs to load')
 
 import copy
 import gc
@@ -236,12 +237,16 @@ def lbinfodatagenerator():
 """
 
 
-def npydatagenerator(npydata,start=0):
+def npydatagenerator(npydata,start=0,test=False):
     # this function generates training (input and target pairs) chosen at random from the npydata
-    while True:
-        ridx = np.random.permutation(len(npydata)-ITERS)
-        if np.sum(np.abs(np.diff(ridx))<3) < 3:
-            break
+    #if test:
+    #    ridx = range(len(npydata)-ITERS)
+    #else:
+    if True:
+        while True:
+            ridx = np.random.permutation(len(npydata)-ITERS)
+            if np.sum(np.abs(np.diff(ridx))<3) < 3:
+                break
 
     idx = start
     while True:
@@ -466,13 +471,6 @@ def train(num_epochs, cnn, k):
                 traindata,targetdata = TensorFluidBatch(k,BATCHSIZE)
                 traindata=traindata.cuda()
                 targetdata=targetdata.cuda()
-                #plt.imsave(f"{datadir}/{epoch:07d}tx0.png",norm(traindata[0,0,...].cpu().detach().numpy()))
-                #plt.imsave(f"{datadir}/{epoch:07d}tx1.png",norm(traindata[0,1,...].cpu().detach().numpy()))
-                #plt.imsave(f"{datadir}/{epoch:07d}tx2.png",norm(traindata[0,2,...].cpu().detach().numpy()))
-                #plt.imsave(f"{datadir}/{epoch:07d}tx3.png",norm(traindata[0,3,...].cpu().detach().numpy()))
-                #plt.imsave(f"{datadir}/{epoch:07d}ty0.png",norm(targetdata[0,0,...].cpu().detach().numpy()))
-                #plt.imsave(f"{datadir}/{epoch:07d}ty1.png",norm(targetdata[0,1,...].cpu().detach().numpy()))
-                #plt.imsave(f"{datadir}/{epoch:07d}ty2.png",norm(targetdata[0,2,...].cpu().detach().numpy()))
                 for i in range(0,total_step):
                     if verb: 
                         print (f'Epoch [{epoch + 1}/{num_epochs}], shapein:{traindata.shape}, tr/tg:{traindata[0,0,1,1]:+8f}/{targetdata[0,0,1,1]:+8f}  ',end='',flush=True)
@@ -508,7 +506,7 @@ def train(num_epochs, cnn, k):
                     if verb: print("done. ",flush=True,end='')
 
                     losses.append(loss.item())
-                    lossavg=np.mean(losses[max(0,epoch-20):epoch+1])
+                    lossavg=np.median(losses[max(0,epoch-20):epoch+1])
                     lossstd=np.std(losses[max(0,epoch-20):epoch+1])
                     lossavgs.append(lossavg)
                     lossstds.append(lossstd)
@@ -541,9 +539,85 @@ def train(num_epochs, cnn, k):
         traceback.print_exc(file=sys.stdout)
         print("-"*60)
 
+    print("")
 
-def test():
-    ktest = npydatagenerator(test=True)
+
+def test(pnum_epochs, cnn, k):
+    num_epochs = pnum_epochs//5
+    global losses,lossavgs,lossstds
+    losses=[]
+    lossavgs=[]
+    lossstds=[]
+    cnn.eval()
+    cnn.cuda()
+    bestloss =1000
+    beststd = 1000
+    try:
+        with torch.no_grad():
+            # Test the model
+            total_step = 1 #traindata.shape[0] // BATCHSIZE
+            #print(f"total_step = {total_step}")
+            state_dict=None
+            savedepoch=None
+
+            for epoch in range(num_epochs):
+                verb= (epoch % 1 == 0) and VERBOSE
+                traindata,targetdata = TensorFluidBatch(k,BATCHSIZE)
+                traindata=traindata.cuda()
+                targetdata=targetdata.cuda()
+                for i in range(0,total_step):
+                    if verb: 
+                        print (f'Epoch [{epoch + 1}/{num_epochs}], shapein:{traindata.shape}, tr/tg:{traindata[0,0,1,1]:+8f}/{targetdata[0,0,1,1]:+8f}  ',end='',flush=True)
+                    else:
+                        print("t",end='',flush=True)
+                    # gives batch data, normalize x when iterate train_loader
+                    #b_x = Variable(images)   # batch x
+                    #b_y = Variable(labels)   # batch y
+                    #print(f"b_x.shape = {b_x.shape}")
+                    #if epoch % BATCHSIZE*4 == 0:
+                    if verb: print("calc: ",flush=True,end='')
+                    output = cnn(traindata)
+                    if verb: print(f" shapeout={output.shape} ",end='')
+                    if int(ITERS) > 1:
+                        for ii in range(int(ITERS)-1):
+                            nextput = (cnn(output.to(device)))
+                            output = nextput
+                    loss = loss_func(output,targetdata[:,0:4,...].to(device))
+                    if verb: print("eval, ",flush=True,end='')
+
+                    if verb: print("done. ",flush=True,end='')
+
+                    losses.append(loss.item())
+                    lossavg=np.median(losses[max(0,epoch-40):epoch+1])
+                    lossstd=np.std(losses[max(0,epoch-40):epoch+1])
+                    lossavgs.append(lossavg)
+                    lossstds.append(lossstd)
+                    if (i+1) % 1 == 0:
+                        print ('{},{},{},{},{:.20f}' 
+                               .format(epoch + 1, num_epochs, i + 1, total_step, loss.item()),file=open(f'{datadir}/report.txt','a'))
+                        if verb: print (f'log {lossfuncdesc}: {np.log10(loss.item()):.4f}',flush=True,end='')
+                    pass
+                    if lossstd < beststd and epoch>=20:
+                        state_dict = copy.deepcopy(cnn.state_dict())
+                        beststd=lossstd
+                        savedepoch=epoch+1
+                        if verb:print("[saved]",end='')
+                    if verb:print("")
+
+
+    except Exception:
+        print("Exception in user code:")
+        print("-"*60)
+        traceback.print_exc(file=sys.stdout)
+        print("-"*60)
+
+    print("")
+
+
+
+
+def fluidtest():
+    ktest = npydatagenerator(testdata, test=True)
     global test_data
     # Test the model
     cnn.eval()
@@ -600,7 +674,7 @@ def walktemplate(templ,MP,prefix=''):
         else:
             if DEBUG: print(" = ",end='')
         if pv<pmin: pv=pmin
-        if pv > pmax: pv=pmax
+        if pv >= pmax: pv=pmax-pint
         pv=np.around(pv,6)
         if DEBUG: print(pv)
         mp(MP,pfx,force=pv)
@@ -669,7 +743,7 @@ def diploid(agent1, agent2):
 
 
 # *** LOAD THE DATASET ***
-def load_data(nrecs=3000):
+def load_data(nrecs=args.loadrecs):
     # this function loads the dataset from the npy files
     npyfiledata = []
     print("LOADING DATA")
@@ -744,12 +818,15 @@ device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 print(f"COMPUTING DEVICE: {device}")
 
 # *** OPTION TO GENERATE npy FILE FROM DATA ***
-if '-npy' in sys.argv: 
+if args.npy: 
     convert_lbinfo_npy()
     # note: above call never returns; -npy is like a standalone utility
 
 #*** load npy file data ***
 npydata = load_data()
+
+testdata = npydata[:len(npydata)*1//4]
+npydata = npydata[len(npydata)*1//4:]
 
 
 # default behavior is to continue where we left off. 
@@ -876,7 +953,7 @@ while True: # loop through generations
 
         datadir = f"{gen_path}/{agent_id}"
         os.makedirs(datadir, exist_ok=True)
-        if TRAINING:
+        if TRAINING and DEBUG:
             print(f"TRAINING: datadir={datadir}")
 
         #if (not TRAINING) or RESUMING:
@@ -892,7 +969,7 @@ while True: # loop through generations
         if False and int(mp(MP,'ITERS')*10+0.5)//2 *2 == int(mp(MP,'ITERS')*10+0.5):
             loss_func=nn.L1Loss()
             lossfuncdesc="L1Loss"
-        print(f"LOSS: {lossfuncdesc}")
+        if DEBUG: print(f"LOSS: {lossfuncdesc}")
 
         optlr = 10**(mp(MP,'INIT_LR',-2))
         optimizer = optim.Adam(cnn.parameters(), lr = optlr)
@@ -919,7 +996,8 @@ while True: # loop through generations
             train(num_epochs, cnn, k)
             torch.save(cnn.state_dict(), f"{datadir}{os.path.sep}cnnfinalstate.dat")
             if DEBUG: print(f"saved state to {datadir}{os.path.sep}cnnfinalstate.dat")
-
+            #print(f"copy ({sys.argv[0]},{datadir}{os.path.sep}torchfluid{get_timestamp()}.py)")
+            shutil.copy(sys.argv[0],   f"{datadir}{os.path.sep}torchfluid{get_timestamp()}.py")
 
         # training completed!
         if 'AGENTS_RUN' not in THISGEN:
@@ -932,6 +1010,16 @@ while True: # loop through generations
                 'lossavgs': lossavgs,
                 'lossstds': lossstds
                 }
+        testk = npydatagenerator(testdata,test=True)
+        test(num_epochs, cnn, testk)
+        THISGEN['AGENTS_RUN'][agent_id]['REPORT'] = {
+                'losses': losses,
+                'lossavgs': lossavgs,
+                'lossstds': lossstds
+                }
+
+
+
         if agent_id in THISGEN['AGENTS_IN']:
             del THISGEN['AGENTS_IN'][agent_id]
 
@@ -939,6 +1027,9 @@ while True: # loop through generations
         os.replace(f'{gen_path}/_IN_gen_population_working.json',f'{gen_path}/gen_population_working.json')
 
     if len(THISGEN['AGENTS_RUN']) >= pop_size:
+        if os.path.exists("stop.flg"):
+            os.remove("stop.flg")
+            sys.exit(0)
         #** DONE WITH THIS GENERATION **
         # set up for next generation
         scores = []
@@ -946,10 +1037,6 @@ while True: # loop through generations
             scorelist = np.array(THISGEN['AGENTS_RUN'][agent]['REPORT']['lossavgs'])
             # calculate projected score in 50 epochs by going back 50 epochs and projecting
             realendscore = scorelist[-1]
-            endscore = np.log(scorelist[-1])
-            score50fromend = np.log(scorelist[-50])
-            scorechangelast50 = score50fromend - endscore
-            projectedscore = np.exp(endscore - scorechangelast50)
             scores.append({'agent':agent,'score':realendscore })
         scores=pd.DataFrame(scores)
         scores=scores.sort_values('score')
@@ -989,25 +1076,35 @@ while True: # loop through generations
             sys.exit(0)
 
         NEXTGEN=json.load(open(f'{evo_template_path}','r'))
-
+        NEXTGEN['NUM_EPOCHS'] = NEXTGEN['NUM_EPOCHS']+NEXTGEN['EPOCH_INC']
+        json.dump(NEXTGEN,open(f'{evo_template_path}','w'),indent=2)
+        json.dump
         if 'AGENTS_IN' not in NEXTGEN:
             NEXTGEN['AGENTS_IN'] = {}
         breedlist = list(breeders['agent'])
-        for i in range(0,len(breedlist),2):
+        while len(breedlist) > 0:
+        #for i in range(0,len(breedlist)//2):
             newspawn = get_timestamp()
-            if DEBUG: print(f"spawning {breedlist[i]} x {breedlist[i+1]}")
-            NEXTGEN['AGENTS_IN'][childname(breedlist[i])] =   diploid(THISGEN['AGENTS_RUN'][breedlist[i]],
-                                                                      THISGEN['AGENTS_RUN'][breedlist[i+1]])
-            if DEBUG: print(childname(breedlist[i]))
-            if DEBUG: print(NEXTGEN['AGENTS_IN'][childname(breedlist[i])]) #['AGENT_ID'] = childname(breedlist[i])
-            NEXTGEN['AGENTS_IN'][childname(breedlist[i])]['AGENT_ID'] = childname(breedlist[i])
-            NEXTGEN['AGENTS_IN'][childname(breedlist[i+1])] = diploid(THISGEN['AGENTS_RUN'][breedlist[i]],
-                                                                      THISGEN['AGENTS_RUN'][breedlist[i+1]])
-            NEXTGEN['AGENTS_IN'][childname(breedlist[i+1])]['AGENT_ID'] = childname(breedlist[i+1])
+            p1 = 0
+            p2 = int(abs(np.random.normal()*len(breedlist)/4))+1
+            if p2 >= len(breedlist):
+                p2 = len(breedlist)-1
+            
+            print(f"spawning {breedlist[p1]} x {breedlist[p2]}")
+            NEXTGEN['AGENTS_IN'][childname(breedlist[p1])] =   diploid(THISGEN['AGENTS_RUN'][breedlist[p1]],
+                                                                      THISGEN['AGENTS_RUN'][breedlist[p2]])
+            if DEBUG: print(childname(breedlist[p1]))
+            if DEBUG: print(NEXTGEN['AGENTS_IN'][childname(breedlist[p1])]) #['AGENT_ID'] = childname(breedlist[i])
+            NEXTGEN['AGENTS_IN'][childname(breedlist[p1])]['AGENT_ID'] = childname(breedlist[p1])
+            NEXTGEN['AGENTS_IN'][childname(breedlist[p2])] = diploid(THISGEN['AGENTS_RUN'][breedlist[p1]],
+                                                                      THISGEN['AGENTS_RUN'][breedlist[p2]])
+            NEXTGEN['AGENTS_IN'][childname(breedlist[p2])]['AGENT_ID'] = childname(breedlist[p2])
             #del NEXTGEN['AGENTS_IN'][breedlist[i]]['REPORT']
             #del NEXTGEN['AGENTS_IN'][breedlist[i+1]]['REPORT']
-            NEXTGEN['AGENTS_IN'][breedlist[i]] = copy.deepcopy(THISGEN['AGENTS_RUN'][breedlist[i]])
-            del NEXTGEN['AGENTS_IN'][breedlist[i]]['REPORT']
+            NEXTGEN['AGENTS_IN'][breedlist[p1]] = copy.deepcopy(THISGEN['AGENTS_RUN'][breedlist[p1]])
+            del NEXTGEN['AGENTS_IN'][breedlist[p1]]['REPORT']
+            del breedlist[p2]
+            del breedlist[p1]
         """ OLD MYTOSIS METHOD 
         for breeder in list(breeders['agent']):
             NEXTGEN['AGENTS_IN'][breeder] = copy.deepcopy(THISGEN['AGENTS_RUN'][breeder])
@@ -1028,7 +1125,7 @@ while True: # loop through generations
         template=NEXTGEN['TEMPLATE']
         agentids=list(NEXTGEN['AGENTS_IN'].keys())
         #agentids=agentids[NEXTGEN['NUM_BREED']:]
-        for ag in agentids[1:]:
+        for ag in agentids[3:]:
             walktemplate(template, NEXTGEN['AGENTS_IN'][ag])
         json.dump(NEXTGEN,open(f'{evo_path}/next_gen.json','w'),indent=2)
 

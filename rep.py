@@ -11,7 +11,7 @@ import json
 def smoother(y):
     # this is a simple moving average
     y = np.array(y) 
-    navg = 20
+    navg = 40
     bestloss=100
     beststd=100
     beststdepoch=None
@@ -19,7 +19,7 @@ def smoother(y):
     yk = np.zeros_like(y)
     ys = np.zeros_like(y)
     for i in range(len(y)):
-        yk[i]=y[max(0,i-navg):i+1].mean()
+        yk[i]=np.median(y[max(0,i-navg):i+1])
         ys[i]=y[max(0,i-navg):i+1].std()
         if yk[i]<bestloss and i >= 20:
             bestloss = yk[i]
@@ -69,6 +69,7 @@ txtlbls=[]
 gen_template_path = glob("evo/current_evo/evo_*/current_gen/gen_*/gen_population_working.json")[0]
 THISGEN = json.load(open(gen_template_path,'r'))
 EPOCHS=THISGEN["NUM_EPOCHS"]
+EPOCHS=EPOCHS + EPOCHS//5
 for reps in repdirs:
     repcol = cols[coli % 8]['color']
     coli+=1
@@ -79,7 +80,7 @@ for reps in repdirs:
     txtlbl = lbl[19:]
     if lbl[-1]=='c':
         txtlbl = '$' + lbl[19:22] + '_{' + str(int(lbl[-7:-1]))+ '}$'
-    plt.plot(range(xcoord,xcoord+len(yvals)),yvals,label=txtlbl, color=repcol,alpha=0.9,lw=0.5)
+    plt.plot(range(xcoord,xcoord+len(yvals)),yvals,label=txtlbl, color=repcol,alpha=0.6,lw=0.2)
     #ysmooth=savgol_filter(yvals,min(len(yvals)//10+2,115)//2*2+1,1)
     ysmooth,minx,miny,ystd,minstdx,minstdy=smoother(yvals) 
     plt.plot(range(xcoord,xcoord+len(ysmooth)),ysmooth, color=repcol)
